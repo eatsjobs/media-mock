@@ -1,0 +1,5 @@
+{
+  "name": "@eatsjobs/media-mock",
+  "version": "0.1.0",
+  "exports": "./lib/main.ts"
+}
