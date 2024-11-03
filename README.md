@@ -1,13 +1,13 @@
-# MediaMock
+# @eatsjobs/media-mock
 
-![npm version](https://img.shields.io/npm/v/@eatsjobs/mediamock)
-![build](https://img.shields.io/github/actions/workflow/status/eatsjobs/mediamock/ci.yml?branch=main)
-![coverage](https://img.shields.io/codecov/c/github/eatsjobs/mediamock?flag=codecov)
-![license](https://img.shields.io/github/license/eatsjobs/mediamock)
-![issues](https://img.shields.io/github/issues/eatsjobs/mediamock)
+![npm version](https://img.shields.io/npm/v/@eatsjobs/media-mock)
+![build](https://img.shields.io/github/actions/workflow/status/eatsjobs/media-mock/ci.yml?branch=main)
+![coverage](https://img.shields.io/codecov/c/github/eatsjobs/media-mock?flag=codecov)
+![license](https://img.shields.io/github/license/eatsjobs/media-mock)
+![issues](https://img.shields.io/github/issues/eatsjobs/media-mock)
 ![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)
 ![TypeScript](https://img.shields.io/badge/types-TypeScript-blue)
-![Node Version](https://img.shields.io/node/v/@eatsjobs/mediamock)
+![Node Version](https://img.shields.io/node/v/@eatsjobs/media-mock)
 
 **MediaMock** is a JavaScript library that simulates media devices (like webcams) in web applications, allowing developers to test and debug media constraints, device configurations, and stream functionality without needing physical devices. This is particularly useful in scenarios where hardware or user permissions aren't available or desired, such as in automated testing environments.
 
