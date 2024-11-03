@@ -2,12 +2,23 @@
 
 ![npm version](https://img.shields.io/npm/v/@eatsjobs/media-mock)
 ![build](https://img.shields.io/github/actions/workflow/status/eatsjobs/media-mock/ci.yml?branch=main)
-![coverage](https://img.shields.io/codecov/c/github/eatsjobs/media-mock?flag=codecov)
 ![license](https://img.shields.io/github/license/eatsjobs/media-mock)
 ![issues](https://img.shields.io/github/issues/eatsjobs/media-mock)
 ![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)
 ![TypeScript](https://img.shields.io/badge/types-TypeScript-blue)
 ![Node Version](https://img.shields.io/node/v/@eatsjobs/media-mock)
+
+## Table of Contents
+
+- [Installation](#installation)
+- [Usage](#usage)
+- [API Documentation](#api-documentation)
+  - [MediaMock](#mediamock)
+  - [Settings](#settings)
+  - [MockOptions](#mockoptions)
+- [Debugging](#debugging)
+
+---
 
 **MediaMock** is a JavaScript library that simulates media devices (like webcams) in web applications, allowing developers to test and debug media constraints, device configurations, and stream functionality without needing physical devices. This is particularly useful in scenarios where hardware or user permissions aren't available or desired, such as in automated testing environments.
 
@@ -29,7 +40,7 @@ Install with npm:
 npm install @eatsjobs/media-mock
 ```
 
-## Getting Started
+## Usage
 
 Basic Usage
 
@@ -39,7 +50,9 @@ To start using MediaMock, initialize the library, configure a mock media stream,
 import { MediaMock, devices } from "@eatsjobs/media-mock";
 
 // Configure and initialize MediaMock with default settings
-MediaMock.setImageURL("./assets/640x480-sample.png").mock(devices["iPhone 12"]);
+MediaMock
+  .setImageURL("./assets/640x480-sample.png")
+  .mock(devices["iPhone 12"]); // or devices["Samsung Galaxy M53"] for Android, "Mac Desktop" for desktop mediaDevice emulation
 
 // Set up a video element to display the stream
 const videoElement = document.createElement("video");
@@ -49,10 +62,6 @@ videoElement.srcObject = await navigator.mediaDevices.getUserMedia({ video: true
 videoElement.play();
 ```
 
-## Enabling Debug Mode
-
-Debug mode appends the canvas and loaded image to the DOM, allowing you to see the mock video feed.
-
 ## Configuring a Custom Device and Constraints
 
 You can set a specific device and define video constraints such as resolution and frame rate.
@@ -60,19 +69,12 @@ You can set a specific device and define video constraints such as resolution an
 ```typescript
 MediaMock
   .setImageURL("./assets/full-hd-sample.png")
-  .mock(devices["Mac Desktop"], {
-    mediaDevices: {
-      getUserMedia: true,
-      enumerateDevices: true,
-      getSupportedConstraints: true,
-    },
-  })
+  .mock(devices["Mac Desktop"])
 ```
-
 
 ## API Documentation
 
-### `MediaMockClass`
+### `MediaMock`
 
 The main class of the library, used to configure, initialize, and manage the mock media devices.
 
@@ -133,4 +135,25 @@ interface MockMediaDeviceInfo extends MediaDeviceInfo {
 
 ```
 
----
+### Debugging
+
+`enableDebugMode()` appends the canvas and the loaded image used by the canvas to the document.body.
+
+```typescript
+
+import { MediaMock, devices } from "@eatsjobs/media-mock";
+
+// Configure and initialize MediaMock with default settings
+MediaMock
+  .setImageURL("./assets/640x480-sample.png")
+  .enableDebugMode()
+  .mock(devices["iPhone 12"]); // or devices["Samsung Galaxy M53"] for Android, "Mac Desktop" for desktop mediaDevice emulation
+
+// Set up a video element to display the stream
+const videoElement = document.createElement("video");
+document.body.appendChild(videoElement);
+
+videoElement.srcObject = await navigator.mediaDevices.getUserMedia({ video: true });
+videoElement.play();
+
+```

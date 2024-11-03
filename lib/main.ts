@@ -30,7 +30,7 @@ export interface Settings {
   imageURL: string;
 
   /**
-   * the preset device config to emulate
+   * The preset device config to emulate
    *
    * @type {DeviceConfig}
    */
@@ -66,8 +66,15 @@ export class MediaMockClass {
 
   private ctx: CanvasRenderingContext2D | undefined;
 
-  public setImageURL(path: string): typeof MediaMock {
-    this.settings.imageURL = path;
+  /**
+   * The Image that will be used as video source.
+   *
+   * @public
+   * @param {string} url
+   * @returns {typeof MediaMock}
+   */
+  public setImageURL(url: string): typeof MediaMock {
+    this.settings.imageURL = url;
     return this;
   }
 
@@ -103,7 +110,7 @@ export class MediaMockClass {
   }
 
   /**
-   * Debug mode will append canvas and loaded image to the body
+   * Debug mode will append the canvas and loaded image to the body
    *
    * @public
    */
@@ -129,6 +136,12 @@ export class MediaMockClass {
     return this;
   }
 
+  /**
+   * Removes the debug canvas and image from the body.
+   *
+   * @public
+   * @returns {typeof MediaMock}
+   */
   public disableDebugMode(): typeof MediaMock {
     this.debug = false;
     const canvas = document.getElementById(this.mediaMockCanvasId);
@@ -139,6 +152,14 @@ export class MediaMockClass {
     return this;
   }
 
+  /**
+   * Replaces the navigator.mediaDevices functions.
+   *
+   * @public
+   * @param {DeviceConfig} device
+   * @param {MockOptions} [options=createDefaultMockOptions()]
+   * @returns {typeof MediaMock}
+   */
   public mock(
     device: DeviceConfig,
     options: MockOptions = createDefaultMockOptions()
@@ -179,6 +200,12 @@ export class MediaMockClass {
     return this;
   }
 
+  /**
+   * Stops the mock and removes the mock functions.
+   *
+   * @public
+   * @returns {typeof MediaMock}
+   */
   public unmock(): typeof MediaMock {
     this.stopMockStream();
     this.disableDebugMode();
