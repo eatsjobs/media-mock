@@ -11,6 +11,28 @@ export interface MockMediaDeviceInfo extends MediaDeviceInfo {
   getCapabilities: () => EnhancedMediaTrackCapabilities;
 }
 
+
+/**
+ * Creates a mock MediaDeviceInfo object.
+ *
+ * @export
+ * @param {{
+ *   deviceId: string;
+ *   groupId: string;
+ *   kind: MediaDeviceKind;
+ *   label: string;
+ *   mockCapabilities?: EnhancedMediaTrackCapabilities;
+ * }} param0
+ * @param {string} param0.deviceId
+ * @param {string} param0.groupId
+ * @param {MediaDeviceKind} param0.kind
+ * @param {string} param0.label
+ * @param {EnhancedMediaTrackCapabilities} [param0.mockCapabilities={
+ *     width: { min: 1, max: 1280 },
+ *     height: { min: 1, max: 720 },
+ *   }]
+ * @returns {MockMediaDeviceInfo}
+ */
 export function createMediaDeviceInfo({
   deviceId,
   groupId,

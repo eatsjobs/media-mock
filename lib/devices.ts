@@ -34,6 +34,16 @@ export interface DeviceConfig {
 }
 
 type DeviceName = "iPhone 12" | "Samsung Galaxy M53" | "Mac Desktop";
+
+
+/**
+ * A list of devices to mock. For now we have 
+ * - iPhone 12
+ * - Samsung Galaxy M53
+ * - Mac Desktop
+ *
+ * @type {Record<DeviceName, DeviceConfig>}
+ */
 export const devices: Record<DeviceName, DeviceConfig> = {
   "iPhone 12": {
     videoResolutions: [

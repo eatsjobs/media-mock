@@ -38,6 +38,29 @@ export interface Settings {
   constraints: MediaTrackConstraints;
 }
 
+
+/**
+ * MediaMock class.
+ * 
+ * @example
+ * ```ts
+ * import { MediaMock, devices } from "@eatsjobs/media-mock";
+ *   // Configure and initialize MediaMock with default settings
+ *   MediaMock
+ *     .setImageURL("./assets/640x480-sample.png")
+ *     .mock(devices["iPhone 12"]); // or devices["Samsung Galaxy M53"] for Android, "Mac Desktop" for desktop mediaDevice emulation
+ *
+ *   // Set up a video element to display the stream
+ *   const videoElement = document.createElement("video");
+ *   document.body.appendChild(videoElement);
+ *
+ *   videoElement.srcObject = await navigator.mediaDevices.getUserMedia({ video: true });
+ *   videoElement.play();
+ * ```
+ * @export
+ * @class MediaMockClass
+ * @typedef {MediaMockClass}
+ */
 export class MediaMockClass {
   public settings: Settings = {
     imageURL: "./assets/640x480-sample.png",
