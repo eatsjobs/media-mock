@@ -30,9 +30,13 @@ jobs:
       - name: Run Tests with Coverage
         run: npm run test -- --coverage
 
-      - name: Upload Coverage Report
-        if: success()
-        uses: codecov/codecov-action@v3
+      - name: Upload results to Codecov
+        uses: codecov/codecov-action@v4
         with:
-          name: coverage-report
-          files: ./coverage/*.json
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload Coverage Report
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
