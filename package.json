@@ -28,8 +28,7 @@
     "test-coverage": "vitest --coverage",
     "changeset": "changeset",
     "version-packages": "changeset version",
-    "prepublishOnly": "changeset publish",
-    "release": "npm run build && npm publish"
+    "release": "npm run build && npx changeset publish"
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.9",

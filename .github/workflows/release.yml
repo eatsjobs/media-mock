@@ -69,3 +69,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      
+      - name: Publish on JSR 
+        id: jsr-publish
+        run: |
+          # Extract the version from package.json
+          VERSION=$(jq -r '.version' package.json)
+          
+          # Update jsr.json with the extracted version
+          jq --arg version "$VERSION" '.version = $version' jsr.json > tmp.json && mv tmp.json jsr.json
+
+          npx jsr publish
