@@ -40,7 +40,7 @@ jobs:
   release:
     needs: test
     runs-on: ubuntu-latest
-    if: github.ref_type == 'tag'
+    if: github.ref == 'refs/heads/main' && steps.check_changesets.outputs.has_changeset == 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -53,6 +53,18 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Check for changesets
+        id: check_changesets
+        run: |
+          echo "Checking for changesets..."
+          if [[ -n "$(git status --porcelain .changeset)" ]]; then  # Check for changes in the .changeset directory
+            echo "Changes detected in .changeset!"
+            echo "has_changeset=true" >> $GITHUB_ENV
+          else
+            echo "No changes detected in .changeset."
+            echo "has_changeset=false" >> $GITHUB_ENV
+          fi
 
       - name: Configure npm for publishing
         run: npm config set //registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}
