@@ -1,6 +1,8 @@
 import { defineConfig } from "vitest/config";
 import dts from "vite-plugin-dts";
 
+import { codecovVitePlugin } from "@codecov/vite-plugin";
+
 export default defineConfig({
   optimizeDeps: {
     include: ["@vitest/coverage-v8/browser"],
@@ -25,5 +27,12 @@ export default defineConfig({
       headless: true,
     },
   },
-  plugins: [dts()],
+  plugins: [
+    dts(),
+    codecovVitePlugin({
+      enableBundleAnalysis: process.env.CODECOV_TOKEN !== undefined,
+      bundleName: "@eatsjobs/media-mock",
+      uploadToken: process.env.CODECOV_TOKEN,
+    }),
+  ],
 });

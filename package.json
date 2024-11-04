@@ -25,6 +25,7 @@
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.9",
+    "@codecov/vite-plugin": "^1.2.1",
     "@vitest/browser": "^2.1.4",
     "@vitest/coverage-v8": "^2.1.4",
     "playwright": "^1.48.2",
