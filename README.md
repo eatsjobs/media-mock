@@ -139,6 +139,8 @@ interface MockMediaDeviceInfo extends MediaDeviceInfo {
 
 ```
 
+---
+
 ### Debugging
 
 `enableDebugMode()` appends the canvas and the loaded image used by the canvas to the document.body.
