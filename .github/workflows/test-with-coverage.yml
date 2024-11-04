@@ -25,7 +25,7 @@ jobs:
         run: npm install
 
       - name: Install playwright
-        run: npx playwright install
+        run: npx playwright install --with-deps
 
       - name: Run Tests with Coverage
         run: npm run test -- --coverage
