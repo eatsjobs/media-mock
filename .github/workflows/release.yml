@@ -1,7 +1,5 @@
 name: Release Workflow
 
-
-
 on:
   push:
     branches:
@@ -40,10 +38,6 @@ jobs:
 
   # Job for releasing package on push to main with a git tag
   release:
-    permissions:
-      contents: write
-      packages: write
-      id-token: write
     needs: test
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'

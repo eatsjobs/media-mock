@@ -7,6 +7,7 @@
 ![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)
 ![TypeScript](https://img.shields.io/badge/types-TypeScript-blue)
 ![Node Version](https://img.shields.io/node/v/@eatsjobs/media-mock)
+[![codecov](https://codecov.io/gh/eatsjobs/media-mock/graph/badge.svg?token=K6INB2LZ8W)](https://codecov.io/gh/eatsjobs/media-mock)
 
 ## Table of Contents
 
@@ -26,7 +27,7 @@
 
 - **Device Simulation**: Simulate configurations for various devices like iPhone, desktop, or custom configurations.
 - **Constraint Support**: Set custom video constraints such as resolution, frame rate, and more.
-- **Canvas-based Mock Stream**: Use an image as a video input source and capture it as a mock stream.
+- **Canvas-based Mock Stream**: Use an image as a video input source and capture it as a canvas stream.
 - **Debug Mode**: Visualize the mock stream by displaying the canvas and image in the DOM.
 - **Easy Integration with Testing**: Ideal for testing media applications with tools like Vitest, Jest or Playwright.
 
