@@ -19,7 +19,7 @@ export default defineConfig({
       provider: "playwright",
       enabled: true,
       name: "chromium",
-      headless: false,
+      headless: true,
     },
   },
   plugins: [dts()],
