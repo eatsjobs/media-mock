@@ -7,6 +7,11 @@ on:
       
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
+permissions:
+  id-token: write
+  contents: write  # Required to push changes back to the repo (like updating jsr.json)
+  packages: write  # Required to publish to npm
+
 jobs:
   # Job for testing and coverage report
   test:
@@ -79,4 +84,6 @@ jobs:
           # Update jsr.json with the extracted version
           jq --arg version "$VERSION" '.version = $version' jsr.json > tmp.json && mv tmp.json jsr.json
 
+          git add jsr.json
+          git commit -m "chore: update jsr.json version to $VERSION" || echo "No changes to commit"
           npx jsr publish
