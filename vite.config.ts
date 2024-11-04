@@ -26,6 +26,9 @@ export default defineConfig({
       name: "chromium",
       headless: true,
     },
+    coverage: {
+      reporter: ["text", "json-summary", "lcov", "json"],
+    },
   },
   plugins: [
     dts(),

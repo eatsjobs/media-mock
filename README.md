@@ -11,7 +11,7 @@
 ![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)
 ![TypeScript](https://img.shields.io/badge/types-TypeScript-blue)
 ![Node Version](https://img.shields.io/node/v/@eatsjobs/media-mock)
-[![codecov](https://codecov.io/gh/eatsjobs/media-mock/graph/badge.svg?token=K6INB2LZ8W)](https://codecov.io/gh/eatsjobs/media-mock)
+[![codecov](https://codecov.io/gh/eatsjobs/media-mock/graph/badge.svg?token=K6INB2LZ8W)](https://codecov.io/gh/@eatsjobs/media-mock)
 
 ## Table of Contents
 
