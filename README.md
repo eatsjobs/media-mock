@@ -40,6 +40,12 @@ Install with npm:
 npm install @eatsjobs/media-mock
 ```
 
+Install with jsr:
+
+```bash
+npx jsr add @eatsjobs/media-mock
+```
+
 ## Usage
 
 Basic Usage
