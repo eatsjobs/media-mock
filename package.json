@@ -1,7 +1,13 @@
 {
   "name": "@eatsjobs/media-mock",
   "version": "0.1.4",
-  "private": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT",
+  "umd:main": "./dist/media-mock.umd.cjs",
+  "unpkg": "./dist/media-mock.umd.cjs",
+  "author": "@eatsjobs Pasquale Mangialavori",
   "type": "module",
   "files": [
     "dist"
