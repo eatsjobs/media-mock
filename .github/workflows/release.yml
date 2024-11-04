@@ -1,5 +1,9 @@
 name: Release Workflow
 
+permissions:
+  contents: write
+  packages: write
+
 on:
   push:
     branches:
