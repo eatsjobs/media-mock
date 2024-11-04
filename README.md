@@ -60,6 +60,10 @@ document.body.appendChild(videoElement);
 
 videoElement.srcObject = await navigator.mediaDevices.getUserMedia({ video: true });
 videoElement.play();
+
+const devices = await navigator.mediaDevices.enumerateDevices();
+const supportedConstraints = await navigator.mediaDevices.getSupportedConstraints();
+console.log(devices, supportedConstraints);
 ```
 
 ## Configuring a Custom Device and Constraints
@@ -68,7 +72,7 @@ You can set a specific device and define video constraints such as resolution an
 
 ```typescript
 MediaMock
-  .setImageURL("./assets/full-hd-sample.png")
+  .setImageURL("./assets/640x480-sample.png")
   .mock(devices["Mac Desktop"])
 ```
 

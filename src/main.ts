@@ -1,8 +1,9 @@
 import { MediaMock, devices } from "../lib/main.ts";
-MediaMock.setImageURL("/assets/ean8_12345670.png").mock(devices["iPhone 12"]);
 
-const videoElement = document.querySelector<HTMLVideoElement>("video");
 async function startStream() {
+  const videoElement = document.querySelector<HTMLVideoElement>("video");
+  MediaMock.setImageURL("/assets/ean8_12345670.png").mock(devices["iPhone 12"]);
+
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
       video: {
@@ -19,7 +20,7 @@ async function startStream() {
     const devices = await navigator.mediaDevices.enumerateDevices();
     console.log("Devices:", devices);
 
-    const constraints = await navigator.mediaDevices.getSupportedConstraints();
+    const constraints = navigator.mediaDevices.getSupportedConstraints();
     console.log("constraints:", constraints);
   } catch (error) {
     console.error("Error accessing media devices.", error);
