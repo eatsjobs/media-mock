@@ -2,6 +2,9 @@ import { defineConfig } from "vitest/config";
 import dts from "vite-plugin-dts";
 
 export default defineConfig({
+  optimizeDeps: {
+    include: ["@vitest/coverage-v8/browser"],
+  },
   build: {
     lib: {
       entry: "./lib/main.ts",
