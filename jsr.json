@@ -1,6 +1,6 @@
 {
   "name": "@eatsjobs/media-mock",
-  "version": "0.1.2",
+  "version": "0.1.6",
   "exports": "./lib/main.ts",
   "publish": {
     "include": ["LICENSE", "README.md", "CHANGELOG.md", "lib/**/*.ts"]
