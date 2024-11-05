@@ -4,6 +4,25 @@
   "publishConfig": {
     "access": "public"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/eatsjobs/media-mock.git"
+  },
+  "keywords": [
+    "media",
+    "mediaDevices",
+    "getUserMedia",
+    "mock",
+    "browser",
+    "testing",
+    "playwright",
+    "video",
+    "mocking",
+    "webcam",
+    "automated-testing",
+    "mock-media",
+    "ui-testing"
+  ],
   "license": "MIT",
   "umd:main": "./dist/media-mock.umd.cjs",
   "unpkg": "./dist/media-mock.umd.cjs",
