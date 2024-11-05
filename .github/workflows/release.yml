@@ -4,13 +4,8 @@ on:
   push:
     branches:
       - main
-      
-concurrency: ${{ github.workflow }}-${{ github.ref }}
 
-permissions:
-  id-token: write
-  contents: write  # Required to push changes back to the repo (like updating jsr.json)
-  packages: write  # Required to publish to npm
+concurrency: ${{ github.workflow }}-${{ github.ref }}
 
 jobs:
   # Job for testing and coverage report
@@ -51,6 +46,7 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
+    permissions: write-all
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
