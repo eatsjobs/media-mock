@@ -1,5 +1,11 @@
 # @eatsjobs/media-mock
 
+## 0.1.9
+
+### Patch Changes
+
+- d431b77: Improve package.json informations
+
 ## 0.1.8
 
 ### Patch Changes
