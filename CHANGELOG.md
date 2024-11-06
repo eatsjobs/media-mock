@@ -1,5 +1,11 @@
 # @eatsjobs/media-mock
 
+## 0.1.10
+
+### Patch Changes
+
+- 44aea53: Updated documentation
+
 ## 0.1.9
 
 ### Patch Changes
