@@ -1,6 +1,6 @@
 # @eatsjobs/media-mock
 
-**MediaMock** is a JavaScript library that simulates media devices (like webcams) in web applications, allowing developers to test and debug media constraints, device configurations, and stream functionality without needing physical devices. This is particularly useful in scenarios where hardware or user permissions aren't available or desired, such as in automated testing environments.
+Media-Mock is a JavaScript library that simulates media devices (like webcams) in web applications, allowing developers to test and debug media constraints, device configurations, and stream functionality without needing physical devices. This is particularly useful in scenarios where hardware or user permissions aren't available or desired, such as in automated testing environments.
 
 ---
 
@@ -38,6 +38,9 @@
 ## Installation
 
 Install with npm:
+
+[NPM](https://www.npmjs.com/package/@eatsjobs/media-mock) or
+[JSR](https://jsr.io/@eatsjobs/media-mock)
 
 ```bash
 npm install @eatsjobs/media-mock
@@ -88,7 +91,7 @@ MediaMock
 ## API Documentation
 
 ### `MediaMock`
-
+  
 The main class of the library, used to configure, initialize, and manage the mock media devices.
 
 #### `setImageURL(path: string): MediaMock`
@@ -128,7 +131,7 @@ Interface that contains the mock settings for image URL, device configuration, a
 
 - **imageURL**: `string` - The URL of the image used as the video source.
 - **device**: `DeviceConfig` - Specifies the configuration for the mock device, such as resolution and media information.
-- **constraints**: `{ video: MediaTrackConstraints }` - Specifies video constraints, like resolution and frame rate, for testing against browser media APIs.
+- **constraints**: `Record<keyof MediaTrackSupportedConstraints & "torch", boolean>` - Specifies video constraints, like resolution and frame rate, for testing against browser media APIs.
 
 ---
 
@@ -140,6 +143,10 @@ Represents configuration settings for mock devices, including available video re
 interface DeviceConfig {
   videoResolutions: { width: number; height: number }[];
   mediaDeviceInfo: MockMediaDeviceInfo[];
+  supportedConstraints: Record<
+    keyof MediaTrackSupportedConstraints & "torch",
+    boolean
+  >;
 }
 
 interface MockMediaDeviceInfo extends MediaDeviceInfo {
@@ -172,3 +179,7 @@ videoElement.srcObject = await navigator.mediaDevices.getUserMedia({ video: true
 videoElement.play();
 
 ```
+
+### Similar libraries:
+
+- [https://github.com/theopenwebjp/get-user-media-mock](https://github.com/theopenwebjp/get-user-media-mock)
