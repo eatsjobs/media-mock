@@ -242,6 +242,7 @@ export class MediaMockClass {
     if (this.intervalId) {
       clearInterval(this.intervalId);
     }
+    this.currentStream?.getVideoTracks()?.forEach((track) => track.stop());
     this.currentStream?.stop?.(); // Stop the stream if needed
   }
 
