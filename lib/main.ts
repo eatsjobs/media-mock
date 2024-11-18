@@ -23,11 +23,10 @@ function createDefaultMockOptions(): MockOptions {
 
 export interface Settings {
   /**
-   * The image url to use for the mock.
-   *
+   * The media url to use for the mock. Video or image.
    * @type {string}
    */
-  imageURL: string;
+  mediaURL: string;
 
   /**
    * The preset device config to emulate
@@ -38,16 +37,52 @@ export interface Settings {
   constraints: MediaTrackConstraints;
 }
 
+function isVideoURL(url: string) {
+  const videoExtensions = [
+    "mp4",
+    "webm",
+    "ogg",
+    "mov",
+    "avi",
+    "mkv",
+    "flv",
+    "wmv",
+    "m4v",
+    "3gp",
+    "mpg",
+    "mpeg",
+    "asf",
+    "rm",
+    "vob",
+  ];
+  const extension = url.split(".").pop()?.toLowerCase();
+  return videoExtensions.includes(extension ?? "");
+}
+
+function playVideo(videoElement: HTMLVideoElement) {
+  return new Promise<void>((resolve) => {
+    videoElement.addEventListener("loadeddata", async () => {
+      try {
+        await videoElement.play();
+        resolve();
+      } catch (e: unknown) {
+        console.error(e);
+        resolve();
+      }
+    });
+    videoElement.load();
+  });
+}
 
 /**
  * MediaMock class.
- * 
+ *
  * @example
  * ```ts
  * import { MediaMock, devices } from "@eatsjobs/media-mock";
  *   // Configure and initialize MediaMock with default settings
  *   MediaMock
- *     .setImageURL("./assets/640x480-sample.png")
+ *     .setMediaURL("./assets/640x480-sample.png")
  *     .mock(devices["iPhone 12"]); // or devices["Samsung Galaxy M53"] for Android, "Mac Desktop" for desktop mediaDevice emulation
  *
  *   // Set up a video element to display the stream
@@ -63,7 +98,7 @@ export interface Settings {
  */
 export class MediaMockClass {
   public settings: Settings = {
-    imageURL: "./assets/640x480-sample.png",
+    mediaURL: "./assets/640x480-sample.png",
     device: devices["iPhone 12"],
     constraints: devices["iPhone 12"].supportedConstraints,
   };
@@ -90,14 +125,14 @@ export class MediaMockClass {
   private ctx: CanvasRenderingContext2D | undefined;
 
   /**
-   * The Image that will be used as video source.
+   * The Image or the video that will be used as source.
    *
    * @public
    * @param {string} url
    * @returns {typeof MediaMock}
    */
-  public setImageURL(url: string): typeof MediaMock {
-    this.settings.imageURL = url;
+  public setMediaURL(url: string): typeof MediaMock {
+    this.settings.mediaURL = url;
     return this;
   }
 
@@ -133,7 +168,7 @@ export class MediaMockClass {
   }
 
   /**
-   * Debug mode will append the canvas and loaded image to the body
+   * Debug mode will append the canvas and loaded image to the body if available.
    *
    * @public
    */
@@ -188,6 +223,12 @@ export class MediaMockClass {
     options: MockOptions = createDefaultMockOptions()
   ): typeof MediaMock {
     this.settings.device = device;
+
+    if (typeof navigator.mediaDevices === "undefined") {
+      class MockedMediaDevices extends EventTarget {}
+      defineProperty(navigator, "mediaDevices", new MockedMediaDevices());
+    }
+
     if (options?.mediaDevices.getUserMedia) {
       const unmockGetUserMedia = defineProperty(
         navigator.mediaDevices,
@@ -253,11 +294,9 @@ export class MediaMockClass {
       constraints,
       this.settings.device
     );
-    const fps = this.getFPSFromConstraints(constraints);
+    const isVideo = isVideoURL(this.settings.mediaURL);
 
-    // Load the image and prepare the canvas
-    this.currentImage = await loadImage(this.settings.imageURL);
-    this.currentImage.id = this.mediaMockImageId;
+    const fps = this.getFPSFromConstraints(constraints);
 
     this.canvas = document.createElement("canvas");
     this.canvas.id = this.mediaMockCanvasId;
@@ -265,14 +304,41 @@ export class MediaMockClass {
     this.canvas.height = height;
     this.ctx = this.canvas.getContext("2d")!;
 
-    // Set an interval to update the canvas
-    this.intervalId = setInterval(() => {
-      // Calculate the position to center the image within the canvas
-      const offsetX = (width - this.currentImage!.width) / 2;
-      const offsetY = (height - this.currentImage!.height) / 2;
-      this.ctx?.clearRect(0, 0, width, height); // Clear the canvas
-      this.ctx?.drawImage(this.currentImage!, offsetX, offsetY); // Draw the image in the center of the canvas
-    }, 1000 / fps);
+    if (isVideo) {
+      const video = document.createElement("video");
+      video.addEventListener("error", () => {
+        console.error(
+          "Failed to load video source. Ensure the format is supported and the URL is valid."
+        );
+      });
+
+      video.src = this.settings.mediaURL;
+      video.muted = true;
+      video.playsInline = true;
+      video.loop = true;
+      video.autoplay = true;
+      video.hidden = true;
+      video.crossOrigin = "anonymous";
+      await playVideo(video);
+
+      this.intervalId = setInterval(() => {
+        this.ctx?.clearRect(0, 0, width, height);
+        this.ctx?.drawImage(video, 0, 0, width, height);
+      }, 1000 / fps);
+    } else {
+      // Load the image and prepare the canvas
+      this.currentImage = await loadImage(this.settings.mediaURL);
+      this.currentImage.id = this.mediaMockImageId;
+
+      // Set an interval to update the canvas
+      this.intervalId = setInterval(() => {
+        // Calculate the position to center the image within the canvas
+        const offsetX = (width - this.currentImage!.width) / 2;
+        const offsetY = (height - this.currentImage!.height) / 2;
+        this.ctx?.clearRect(0, 0, width, height); // Clear the canvas
+        this.ctx?.drawImage(this.currentImage!, offsetX, offsetY); // Draw the image in the center of the canvas
+      }, 1000 / fps);
+    }
 
     if (this.debug) {
       this.enableDebugMode();

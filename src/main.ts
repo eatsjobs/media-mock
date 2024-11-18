@@ -2,14 +2,15 @@ import { MediaMock, devices } from "../lib/main.ts";
 
 async function startStream() {
   const videoElement = document.querySelector<HTMLVideoElement>("video");
-  MediaMock.setImageURL("/assets/ean8_12345670.png").mock(devices["iPhone 12"]);
+  const videoAssetURL = "/assets/hd_1280_720_25fps.mp4"; // https://www.pexels.com/video/signing-the-parcel-4440957/
+  MediaMock.setMediaURL(videoAssetURL).mock(devices["iPhone 12"]);
 
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
       video: {
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
-        frameRate: { ideal: 30 },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+        frameRate: { ideal: 5 },
       },
     });
 

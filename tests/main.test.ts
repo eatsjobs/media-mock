@@ -1,20 +1,22 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { MediaMock, createMediaDeviceInfo, devices } from "../lib/main";
+import userEvent from "@testing-library/user-event";
 
 describe("MediaMock", () => {
   const imageUrl = "/assets/ean8_12345670.png";
+  const videoAssetURL = "/assets/hd_1280_720_25fps.mp4";
 
   beforeEach(() => {
     MediaMock.unmock(); // Cleanup after each test
   });
 
   it("should set the image URL correctly", () => {
-    MediaMock.setImageURL(imageUrl);
-    expect(MediaMock["settings"].imageURL).toBe(imageUrl); // Access private property for testing
+    MediaMock.setMediaURL(imageUrl);
+    expect(MediaMock["settings"].mediaURL).toBe(imageUrl); // Access private property for testing
   });
 
   it("should mock iPhone 12 correctly", async () => {
-    MediaMock.setImageURL(imageUrl).mock(devices["iPhone 12"]);
+    MediaMock.setMediaURL(imageUrl).mock(devices["iPhone 12"]);
 
     const stream = await navigator.mediaDevices.getUserMedia({
       video: {
@@ -28,7 +30,7 @@ describe("MediaMock", () => {
   });
 
   it("should mock getSupportedConstraints", async () => {
-    MediaMock.setImageURL(imageUrl).mock(devices["iPhone 12"]);
+    MediaMock.setMediaURL(imageUrl).mock(devices["iPhone 12"]);
 
     const constraints = await navigator.mediaDevices.getSupportedConstraints();
 
@@ -45,7 +47,7 @@ describe("MediaMock", () => {
     navigator.mediaDevices.addEventListener("devicechange", deviceChangeSpy);
 
     // Initialize the mock with a specific device
-    MediaMock.setImageURL(imageUrl).mock(devices["iPhone 12"]);
+    MediaMock.setMediaURL(imageUrl).mock(devices["iPhone 12"]);
 
     const newMediaDevice = createMediaDeviceInfo({
       deviceId: "5",
@@ -71,7 +73,7 @@ describe("MediaMock", () => {
   });
 
   it("should return correct video resolutions", () => {
-    MediaMock.setImageURL(imageUrl).mock(devices["iPhone 12"]);
+    MediaMock.setMediaURL(imageUrl).mock(devices["iPhone 12"]);
 
     const resolution = MediaMock["getResolution"](
       {
@@ -87,7 +89,7 @@ describe("MediaMock", () => {
   });
 
   it("should unmock properly", () => {
-    MediaMock.setImageURL(imageUrl).mock(devices["iPhone 12"]);
+    MediaMock.setMediaURL(imageUrl).mock(devices["iPhone 12"]);
 
     MediaMock.unmock();
 
@@ -95,7 +97,7 @@ describe("MediaMock", () => {
   });
 
   it("should apply frameRate constraint", async () => {
-    MediaMock.setImageURL(imageUrl).mock(devices["iPhone 12"]);
+    MediaMock.setMediaURL(imageUrl).mock(devices["iPhone 12"]);
 
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { frameRate: 15 },
@@ -104,7 +106,7 @@ describe("MediaMock", () => {
   });
 
   it("should apply resolution constraints", async () => {
-    MediaMock.setImageURL(imageUrl).mock(devices["iPhone 12"]);
+    MediaMock.setMediaURL(imageUrl).mock(devices["iPhone 12"]);
 
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { width: 1920, height: 1080 },
@@ -116,7 +118,7 @@ describe("MediaMock", () => {
 
   it("should append debug elements to the DOM", async () => {
     MediaMock.enableDebugMode()
-      .setImageURL(imageUrl)
+      .setMediaURL(imageUrl)
       .mock(devices["iPhone 12"]);
 
     await navigator.mediaDevices.getUserMedia({ video: true });
@@ -127,7 +129,7 @@ describe("MediaMock", () => {
   });
 
   it("should not append debug elements when debug mode is disabled", async () => {
-    MediaMock.setImageURL(imageUrl).mock(devices["iPhone 12"]);
+    MediaMock.setMediaURL(imageUrl).mock(devices["iPhone 12"]);
 
     await navigator.mediaDevices.getUserMedia({ video: true });
 

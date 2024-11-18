@@ -63,7 +63,7 @@ import { MediaMock, devices } from "@eatsjobs/media-mock";
 
 // Configure and initialize MediaMock with default settings
 MediaMock
-  .setImageURL("./assets/640x480-sample.png")
+  .setMediaURL("./assets/640x480-sample.png")
   .mock(devices["iPhone 12"]); // or devices["Samsung Galaxy M53"] for Android, "Mac Desktop" for desktop mediaDevice emulation
 
 // Set up a video element to display the stream
@@ -84,7 +84,7 @@ You can set a specific device and define video constraints such as resolution an
 
 ```typescript
 MediaMock
-  .setImageURL("./assets/640x480-sample.png")
+  .setMediaURL("./assets/640x480-sample.png")
   .mock(devices["Mac Desktop"])
 ```
 
@@ -94,13 +94,13 @@ MediaMock
   
 The main class of the library, used to configure, initialize, and manage the mock media devices.
 
-#### `setImageURL(path: string): MediaMock`
+#### `setMediaURL(path: string): MediaMock`
 
-Sets a custom image URL to use as the video source and returns the instance for chaining.
+Sets a custom image URL or a video url to be uses as the source and returns the instance for chaining.
 
 - **path**: `string` - Path to the image.
 
-#### `enableDebugMode(): void`
+#### `enableDebugMode(): MediaMock`
 
 Enables debug mode, appending the mock canvas and image elements to the DOM for visualization. This allows you to see what’s being used as a video feed during tests.
 
@@ -167,7 +167,7 @@ import { MediaMock, devices } from "@eatsjobs/media-mock";
 
 // Configure and initialize MediaMock with default settings
 MediaMock
-  .setImageURL("./assets/640x480-sample.png")
+  .setMediaURL("./assets/640x480-sample.png")
   .enableDebugMode()
   .mock(devices["iPhone 12"]); // or devices["Samsung Galaxy M53"] for Android, "Mac Desktop" for desktop mediaDevice emulation
 
@@ -180,6 +180,6 @@ videoElement.play();
 
 ```
 
-### Similar libraries:
+### Similar libraries
 
 - [https://github.com/theopenwebjp/get-user-media-mock](https://github.com/theopenwebjp/get-user-media-mock)
