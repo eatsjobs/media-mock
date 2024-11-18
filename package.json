@@ -66,8 +66,5 @@
   "engines": {
     "npm": ">=7.0.0",
     "node": ">=16.0.0"
-  },
-  "dependencies": {
-    "@testing-library/user-event": "^14.5.2"
   }
 }

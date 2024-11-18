@@ -1,10 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { MediaMock, createMediaDeviceInfo, devices } from "../lib/main";
-import userEvent from "@testing-library/user-event";
 
 describe("MediaMock", () => {
   const imageUrl = "/assets/ean8_12345670.png";
-  const videoAssetURL = "/assets/hd_1280_720_25fps.mp4";
 
   beforeEach(() => {
     MediaMock.unmock(); // Cleanup after each test
