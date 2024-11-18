@@ -1,5 +1,15 @@
 # @eatsjobs/media-mock
 
+## 0.2.0
+
+### Minor Changes
+
+- d3ee647: setImageURL renamed to setMediaURL and accepts video urls
+
+### Patch Changes
+
+- 771a9c8: Upgrade dependencies
+
 ## 0.1.10
 
 ### Patch Changes
