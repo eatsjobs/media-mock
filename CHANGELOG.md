@@ -1,5 +1,15 @@
 # @eatsjobs/media-mock
 
+## 0.3.0
+
+### Minor Changes
+
+- 96fe4ce: add possibility to mock/modify video tracks
+
+### Patch Changes
+
+- f042d3b: Fix unused variables
+
 ## 0.2.0
 
 ### Minor Changes
