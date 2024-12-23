@@ -104,6 +104,12 @@ Sets a custom image URL or a video url to be uses as the source and returns the 
 
 Enables debug mode, appending the mock canvas and image elements to the DOM for visualization. This allows you to see what’s being used as a video feed during tests.
 
+#### `setMockedVideoTracksHandler(handler: (tracks: MediaStreamTrack[]) => MediaStreamTrack[]): MediaMock`
+
+Sets a custom handler for the video tracks. The handler is called when the video tracks are created and can be used to modify the tracks programmatically.
+
+- **handler**: `(tracks: MediaStreamTrack[]) => MediaStreamTrack[]` - A function that receives the video tracks and returns the modified tracks.
+
 #### `mock(device: DeviceConfig, options?: MockOptions): MediaMock`
 
 Initializes the mock with a specific device configuration and enables specified media device methods for testing.

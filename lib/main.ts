@@ -124,6 +124,10 @@ export class MediaMockClass {
 
   private ctx: CanvasRenderingContext2D | undefined;
 
+  private mockedVideoTracksHandler: (
+    tracks: MediaStreamTrack[]
+  ) => MediaStreamTrack[] = (tracks) => tracks;
+
   /**
    * The Image or the video that will be used as source.
    *
@@ -207,6 +211,13 @@ export class MediaMockClass {
 
     canvas?.remove();
     image?.remove();
+    return this;
+  }
+
+  public setMockedVideoTracksHandler(
+    mockedVideoTracksHandler: (tracks: MediaStreamTrack[]) => MediaStreamTrack[]
+  ): typeof MediaMock {
+    this.mockedVideoTracksHandler = mockedVideoTracksHandler;
     return this;
   }
 
@@ -344,7 +355,12 @@ export class MediaMockClass {
       this.enableDebugMode();
     }
 
-    this.currentStream = this.canvas.captureStream(fps);
+    this.currentStream = new MediaStream(
+      this.mockedVideoTracksHandler(
+        this.canvas.captureStream(fps)?.getVideoTracks() ?? []
+      )
+    );
+
     return this.currentStream;
   }
 

@@ -161,4 +161,20 @@ describe("MediaMock", () => {
       })
     );
   });
+
+  it("should mock video tracks", async () => {
+    MediaMock.setMediaURL(imageUrl)
+      .setMockedVideoTracksHandler((tracks) => {
+        const settings = tracks[0].getSettings();
+        tracks[0].getSettings = () => ({
+          ...settings,
+          aspectRatio: 2,
+        });
+        return tracks;
+      })
+      .mock(devices["iPhone 12"]);
+
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    expect(stream.getVideoTracks()[0].getSettings().aspectRatio).toBe(2);
+  });
 });
