@@ -334,6 +334,8 @@ export class MediaMockClass {
 
       this.intervalId = setInterval(() => {
         this.ctx?.clearRect(0, 0, width, height);
+        this.ctx!.fillStyle = '#ffffff';
+        this.ctx?.fillRect(0, 0, width, height);
         this.ctx?.drawImage(video, 0, 0, width, height);
       }, 1000 / fps);
     } else {
@@ -343,7 +345,9 @@ export class MediaMockClass {
 
       // Set an interval to update the canvas
       this.intervalId = setInterval(() => {
-        this.ctx?.clearRect(0, 0, width, height); // Clear the canvas
+        this.ctx?.clearRect(0, 0, width, height);
+        this.ctx!.fillStyle = '#ffffff';
+        this.ctx?.fillRect(0, 0, width, height);
 
         // Calculate scaling to fit the image while maintaining aspect ratio
         const scale = Math.min(
