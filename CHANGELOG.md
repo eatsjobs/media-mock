@@ -1,5 +1,11 @@
 # @eatsjobs/media-mock
 
+## 0.4.0
+
+### Minor Changes
+
+- 0b5284a: Fix library types
+
 ## 0.3.0
 
 ### Minor Changes
