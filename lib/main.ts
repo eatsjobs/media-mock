@@ -343,11 +343,28 @@ export class MediaMockClass {
 
       // Set an interval to update the canvas
       this.intervalId = setInterval(() => {
-        // Calculate the position to center the image within the canvas
-        const offsetX = (width - this.currentImage!.width) / 2;
-        const offsetY = (height - this.currentImage!.height) / 2;
         this.ctx?.clearRect(0, 0, width, height); // Clear the canvas
-        this.ctx?.drawImage(this.currentImage!, offsetX, offsetY); // Draw the image in the center of the canvas
+
+        // Calculate scaling to fit the image while maintaining aspect ratio
+        const scale = Math.min(
+          width / this.currentImage!.width,
+          height / this.currentImage!.height
+        );
+        const scaledWidth = this.currentImage!.width * scale;
+        const scaledHeight = this.currentImage!.height * scale;
+
+        // Calculate position to center the scaled image
+        const offsetX = (width - scaledWidth) / 2;
+        const offsetY = (height - scaledHeight) / 2;
+
+        // Draw the image scaled and centered
+        this.ctx?.drawImage(
+          this.currentImage!,
+          offsetX,
+          offsetY,
+          scaledWidth,
+          scaledHeight
+        );
       }, 1000 / fps);
     }
 
