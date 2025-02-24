@@ -37,11 +37,18 @@
   ],
   "main": "./dist/media-mock.umd.cjs",
   "module": "./dist/media-mock.js",
-  "types": "./dist/lib/main.d.ts",
+  "types": "./dist/main.d.ts",
   "exports": {
-    "types": "./dist/main.d.ts",
-    "import": "./dist/media-mock.js",
-    "require": "./dist/media-mock.umd.cjs"
+    ".": {
+      "import": {
+        "types": "./dist/main.d.ts",
+        "default": "./dist/media-mock.js"
+      },
+      "require": {
+        "types": "./dist/main.d.cts",
+        "default": "./dist/media-mock.umd.cjs"
+      }
+    }
   },
   "scripts": {
     "dev": "vite",
@@ -50,7 +57,8 @@
     "test-coverage": "vitest --coverage",
     "changeset": "changeset",
     "version-packages": "changeset version",
-    "release": "npm run build && npx changeset publish"
+    "release": "npm run build && npx changeset publish",
+    "check-types": "npx attw $(npm pack) --profile=node16"
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.9",
@@ -60,8 +68,9 @@
     "playwright": "^1.48.2",
     "typescript": "~5.6.3",
     "vite": "^5.4.11",
-    "vite-plugin-dts": "^4.3.0",
-    "vitest": "^2.1.5"
+    "vite-plugin-dts": "^4.5.0",
+    "vitest": "^2.1.5",
+    "@arethetypeswrong/cli": "~0.17.4"
   },
   "engines": {
     "npm": ">=7.0.0",
