@@ -1,5 +1,12 @@
 # @eatsjobs/media-mock
 
+## 0.4.1
+
+### Patch Changes
+
+- 86e5475: fix alpha channel for canvas
+- 86e5475: fix image not correctly scaled
+
 ## 0.4.0
 
 ### Minor Changes
