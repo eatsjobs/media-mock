@@ -1,5 +1,11 @@
 # @eatsjobs/media-mock
 
+## 0.5.2
+
+### Patch Changes
+
+- c989722: add torch as default capabilities for back cameras on mobile
+
 ## 0.5.1
 
 ### Patch Changes
