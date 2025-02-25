@@ -1,4 +1,4 @@
-interface EnhancedMediaTrackCapabilities extends MediaTrackCapabilities {
+export interface EnhancedMediaTrackCapabilities extends MediaTrackCapabilities {
   whiteBalanceMode?: string[];
   focusDistance?: { min: number };
   zoom?: { max: number; min: number };
