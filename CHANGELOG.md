@@ -1,5 +1,11 @@
 # @eatsjobs/media-mock
 
+## 0.5.0
+
+### Minor Changes
+
+- ca76971: add setCanvasScaleFactor and canvasScaleFactor option
+
 ## 0.4.1
 
 ### Patch Changes
