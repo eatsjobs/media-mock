@@ -1,5 +1,11 @@
 # @eatsjobs/media-mock
 
+## 0.5.1
+
+### Patch Changes
+
+- 81ff175: export EnhancedMediaTrackCapabilities type
+
 ## 0.5.0
 
 ### Minor Changes
