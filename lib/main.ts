@@ -35,6 +35,13 @@ export interface Settings {
    */
   device: DeviceConfig;
   constraints: MediaTrackConstraints;
+  
+  /**
+   * Scale factor for the image in the canvas (0-1)
+   * Lower values create more margin, higher values fill more of the canvas
+   * @type {number}
+   */
+  canvasScaleFactor: number;
 }
 
 function isVideoURL(url: string) {
@@ -101,6 +108,7 @@ export class MediaMockClass {
     mediaURL: "./assets/640x480-sample.png",
     device: devices["iPhone 12"],
     constraints: devices["iPhone 12"].supportedConstraints,
+    canvasScaleFactor: 0.95, // Default scale factor (95%)
   };
 
   private readonly mediaMockImageId = "media-mock-image";
@@ -298,6 +306,20 @@ export class MediaMockClass {
     this.currentStream?.stop?.(); // Stop the stream if needed
   }
 
+  /**
+   * Set the scale factor for the image in the canvas.
+   * Values between 0 and 1, where lower values create more margin,
+   * and higher values fill more of the canvas.
+   *
+   * @public
+   * @param {number} factor - Scale factor between 0 and 1
+   * @returns {typeof MediaMock}
+   */
+  public setCanvasScaleFactor(factor: number): typeof MediaMock {
+    this.settings.canvasScaleFactor = Math.max(0.1, Math.min(1, factor));
+    return this;
+  }
+
   private async getMockStream(
     constraints: MediaStreamConstraints
   ): Promise<MediaStream> {
@@ -313,7 +335,11 @@ export class MediaMockClass {
     this.canvas.id = this.mediaMockCanvasId;
     this.canvas.width = width;
     this.canvas.height = height;
-    this.ctx = this.canvas.getContext("2d")!;
+    
+    this.ctx = this.canvas.getContext("2d", { alpha: true })!;
+    
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillRect(0, 0, width, height);
 
     if (isVideo) {
       const video = document.createElement("video");
@@ -339,29 +365,40 @@ export class MediaMockClass {
         this.ctx?.drawImage(video, 0, 0, width, height);
       }, 1000 / fps);
     } else {
-      // Load the image and prepare the canvas
       this.currentImage = await loadImage(this.settings.mediaURL);
       this.currentImage.id = this.mediaMockImageId;
 
-      // Set an interval to update the canvas
+      console.log(`Canvas: 
+        ${width}x${height}, Image: 
+        ${this.currentImage.width}x${this.currentImage.height}`);
+
       this.intervalId = setInterval(() => {
-        this.ctx?.clearRect(0, 0, width, height);
         this.ctx!.fillStyle = '#ffffff';
         this.ctx?.fillRect(0, 0, width, height);
 
-        // Calculate scaling to fit the image while maintaining aspect ratio
-        const scale = Math.min(
-          width / this.currentImage!.width,
-          height / this.currentImage!.height
-        );
-        const scaledWidth = this.currentImage!.width * scale;
-        const scaledHeight = this.currentImage!.height * scale;
+        const imageAspect = this.currentImage!.width / this.currentImage!.height;
+        const canvasAspect = width / height;
+        
+        let scaledWidth, scaledHeight, offsetX, offsetY;
+        
+        // Use the configurable scale factor from settings
+        const safetyFactor = this.settings.canvasScaleFactor;
 
-        // Calculate position to center the scaled image
-        const offsetX = (width - scaledWidth) / 2;
-        const offsetY = (height - scaledHeight) / 2;
+        if (imageAspect > canvasAspect) {
+          // Image is wider (relative to height) than canvas
+          scaledWidth = width * safetyFactor;
+          scaledHeight = (width * safetyFactor) / imageAspect;
+          offsetX = (width - scaledWidth) / 2;
+          offsetY = (height - scaledHeight) / 2;
+        } else {
+          // Image is taller (relative to width) than canvas
+          scaledHeight = height * safetyFactor;
+          scaledWidth = (height * safetyFactor) * imageAspect;
+          offsetX = (width - scaledWidth) / 2;
+          offsetY = (height - scaledHeight) / 2;
+        }
 
-        // Draw the image scaled and centered
+        this.ctx!.globalCompositeOperation = 'source-over';
         this.ctx?.drawImage(
           this.currentImage!,
           offsetX,
@@ -376,9 +413,11 @@ export class MediaMockClass {
       this.enableDebugMode();
     }
 
+    const canvasStream = this.canvas.captureStream(fps);
+    
     this.currentStream = new MediaStream(
       this.mockedVideoTracksHandler(
-        this.canvas.captureStream(fps)?.getVideoTracks() ?? []
+        canvasStream?.getVideoTracks() ?? []
       )
     );
 
