@@ -194,6 +194,7 @@ export const devices: Record<DeviceName, DeviceConfig> = {
           height: { max: 2160, min: 1 },
           resizeMode: ["none", "crop-and-scale"],
           width: { max: 3840, min: 1 },
+          torch: true,
         },
       }),
     ],
