@@ -2,8 +2,8 @@ import { MediaMock, devices } from "../lib/main.ts";
 
 async function startStream() {
   const videoElement = document.querySelector<HTMLVideoElement>("video");
-  const videoAssetURL = "/assets/hd_1280_720_25fps.mp4"; // https://www.pexels.com/video/signing-the-parcel-4440957/
-  MediaMock.setMediaURL(videoAssetURL)
+  const assetURL = "/assets/ean8_12345670.png"; // https://www.pexels.com/video/signing-the-parcel-4440957/
+  MediaMock.setMediaURL(assetURL)
     .setMockedVideoTracksHandler((tracks) => {
       const capabilities = tracks[0].getCapabilities();
       tracks[0].getCapabilities = () => ({

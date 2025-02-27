@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MediaMock, createMediaDeviceInfo, devices } from "../lib/main";
 
 describe("MediaMock", () => {
@@ -176,6 +176,46 @@ describe("MediaMock", () => {
 
     const stream = await navigator.mediaDevices.getUserMedia({ video: true });
     expect(stream.getVideoTracks()[0].getSettings().aspectRatio).toBe(2);
+  });
+
+  it("should allow changing media URL after stream is created", async () => {
+    const initialImageUrl = "/assets/ean8_12345670.png";
+    const newMediaUrl = "/assets/hd_1280_720_25fps.mp4";
+    
+    // Setup mock with initial image
+    MediaMock.setMediaURL(initialImageUrl).mock(devices["iPhone 12"]);
+    
+    // Request a stream
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    expect(stream).toBeDefined();
+    expect(MediaMock["settings"].mediaURL).toBe(initialImageUrl);
+    
+    // Change the media URL while stream is active
+    MediaMock.setMediaURL(newMediaUrl);
+    
+    // Verify the URL was changed in settings
+    expect(MediaMock["settings"].mediaURL).toBe(newMediaUrl);
+    
+    // Give time for the interval to update with new image
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    // Stream should still be active
+    expect(stream.active).toBe(true);
+    expect(stream.getVideoTracks()[0].readyState).toBe("live");
+  });
+
+  it("should apply canvas scale factor correctly", () => {
+    const scaleFactor = 0.8;
+    
+    MediaMock.setCanvasScaleFactor(scaleFactor);
+    expect(MediaMock["settings"].canvasScaleFactor).toBe(scaleFactor);
+    
+    // Test value clamping (values should be between 0.1 and 1)
+    MediaMock.setCanvasScaleFactor(1.5);
+    expect(MediaMock["settings"].canvasScaleFactor).toBe(1);
+    
+    MediaMock.setCanvasScaleFactor(0.05);
+    expect(MediaMock["settings"].canvasScaleFactor).toBe(0.1);
   });
 
   it("should mock video tracks capabilities", async () => {
