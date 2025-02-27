@@ -115,7 +115,7 @@ export class MediaMockClass {
 
   private readonly mediaMockCanvasId = "media-mock-canvas";
 
-  private currentImage: HTMLImageElement | undefined = new Image();
+  private currentImage: HTMLImageElement | undefined;
 
   private mapUnmockFunction: Map<
     keyof MockOptions["mediaDevices"],
@@ -136,16 +136,97 @@ export class MediaMockClass {
     tracks: MediaStreamTrack[]
   ) => MediaStreamTrack[] = (tracks) => tracks;
 
+  private fps: number = 30;
+  private resolution: { width: number; height: number; } = { width: 640, height: 480 };
+
   /**
    * The Image or the video that will be used as source.
-   *
    * @public
    * @param {string} url
    * @returns {typeof MediaMock}
    */
   public setMediaURL(url: string): typeof MediaMock {
     this.settings.mediaURL = url;
+    if (this.intervalId) {
+      void this.startIntervalDrawing();
+    }
     return this;
+  }
+  
+  private async startIntervalDrawing(): Promise<void> {
+    if (this.intervalId) {
+      clearInterval(this.intervalId);
+    }
+    if (isVideoURL(this.settings.mediaURL)) {
+      const video = document.createElement("video");
+      video.addEventListener("error", () => {
+        console.error(
+          "Failed to load video source. Ensure the format is supported and the URL is valid."
+        );
+      }, { once: true });
+
+      video.src = this.settings.mediaURL;
+      video.muted = true;
+      video.playsInline = true;
+      video.loop = true;
+      video.autoplay = true;
+      video.hidden = true;
+      video.crossOrigin = "anonymous";
+      await playVideo(video);
+
+      this.intervalId = setInterval(() => {
+        this.ctx?.clearRect(0, 0, this.resolution.width, this.resolution.height);
+        this.ctx!.fillStyle = '#ffffff';
+        this.ctx?.fillRect(0, 0, this.resolution.width, this.resolution.height);
+        this.ctx?.drawImage(video, 0, 0, this.resolution.width, this.resolution.height);
+      }, 1000 / this.fps);
+    } else {
+      this.currentImage = await loadImage(this.settings.mediaURL)    
+      this.currentImage.id = this.mediaMockImageId;
+
+      if (this.debug) {
+        console.log(`
+          Canvas: ${this.resolution.width}x${this.resolution.height}, 
+          Image: ${this.currentImage?.width}x${this.currentImage?.height}`
+        );
+      }
+
+      this.intervalId = setInterval(() => {
+        this.ctx!.fillStyle = '#ffffff';
+        this.ctx?.fillRect(0, 0, this.resolution.width, this.resolution.height);
+
+        const imageAspect = this.currentImage!.width / this.currentImage!.height;
+        const canvasAspect = this.resolution.width / this.resolution.height;
+        
+        let scaledWidth, scaledHeight, offsetX, offsetY;
+        
+        // Use the configurable scale factor from settings
+        const safetyFactor = this.settings.canvasScaleFactor;
+
+        if (imageAspect > canvasAspect) {
+          // Image is wider (relative to height) than canvas
+          scaledWidth = this.resolution.width * safetyFactor;
+          scaledHeight = (this.resolution.width * safetyFactor) / imageAspect;
+          offsetX = (this.resolution.width - scaledWidth) / 2;
+          offsetY = (this.resolution.height - scaledHeight) / 2;
+        } else {
+          // Image is taller (relative to width) than canvas
+          scaledHeight = this.resolution.height * safetyFactor;
+          scaledWidth = (this.resolution.height * safetyFactor) * imageAspect;
+          offsetX = (this.resolution.width - scaledWidth) / 2;
+          offsetY = (this.resolution.height - scaledHeight) / 2;
+        }
+
+        this.ctx!.globalCompositeOperation = 'source-over';
+        this.ctx?.drawImage(
+          this.currentImage!,
+          offsetX,
+          offsetY,
+          scaledWidth,
+          scaledHeight
+        );
+      }, 1000 / this.fps);
+    }
   }
 
   /**
@@ -323,97 +404,30 @@ export class MediaMockClass {
   private async getMockStream(
     constraints: MediaStreamConstraints
   ): Promise<MediaStream> {
-    const { width, height } = this.getResolution(
+    this.resolution = this.getResolution(
       constraints,
       this.settings.device
     );
-    const isVideo = isVideoURL(this.settings.mediaURL);
 
-    const fps = this.getFPSFromConstraints(constraints);
+    this.fps = this.getFPSFromConstraints(constraints);
 
     this.canvas = document.createElement("canvas");
     this.canvas.id = this.mediaMockCanvasId;
-    this.canvas.width = width;
-    this.canvas.height = height;
+    this.canvas.width = this.resolution.width;
+    this.canvas.height = this.resolution.height;
     
     this.ctx = this.canvas.getContext("2d", { alpha: true })!;
     
     this.ctx.fillStyle = '#ffffff';
-    this.ctx.fillRect(0, 0, width, height);
+    this.ctx.fillRect(0, 0, this.resolution.width, this.resolution.height);
 
-    if (isVideo) {
-      const video = document.createElement("video");
-      video.addEventListener("error", () => {
-        console.error(
-          "Failed to load video source. Ensure the format is supported and the URL is valid."
-        );
-      });
-
-      video.src = this.settings.mediaURL;
-      video.muted = true;
-      video.playsInline = true;
-      video.loop = true;
-      video.autoplay = true;
-      video.hidden = true;
-      video.crossOrigin = "anonymous";
-      await playVideo(video);
-
-      this.intervalId = setInterval(() => {
-        this.ctx?.clearRect(0, 0, width, height);
-        this.ctx!.fillStyle = '#ffffff';
-        this.ctx?.fillRect(0, 0, width, height);
-        this.ctx?.drawImage(video, 0, 0, width, height);
-      }, 1000 / fps);
-    } else {
-      this.currentImage = await loadImage(this.settings.mediaURL);
-      this.currentImage.id = this.mediaMockImageId;
-
-      console.log(`Canvas: 
-        ${width}x${height}, Image: 
-        ${this.currentImage.width}x${this.currentImage.height}`);
-
-      this.intervalId = setInterval(() => {
-        this.ctx!.fillStyle = '#ffffff';
-        this.ctx?.fillRect(0, 0, width, height);
-
-        const imageAspect = this.currentImage!.width / this.currentImage!.height;
-        const canvasAspect = width / height;
-        
-        let scaledWidth, scaledHeight, offsetX, offsetY;
-        
-        // Use the configurable scale factor from settings
-        const safetyFactor = this.settings.canvasScaleFactor;
-
-        if (imageAspect > canvasAspect) {
-          // Image is wider (relative to height) than canvas
-          scaledWidth = width * safetyFactor;
-          scaledHeight = (width * safetyFactor) / imageAspect;
-          offsetX = (width - scaledWidth) / 2;
-          offsetY = (height - scaledHeight) / 2;
-        } else {
-          // Image is taller (relative to width) than canvas
-          scaledHeight = height * safetyFactor;
-          scaledWidth = (height * safetyFactor) * imageAspect;
-          offsetX = (width - scaledWidth) / 2;
-          offsetY = (height - scaledHeight) / 2;
-        }
-
-        this.ctx!.globalCompositeOperation = 'source-over';
-        this.ctx?.drawImage(
-          this.currentImage!,
-          offsetX,
-          offsetY,
-          scaledWidth,
-          scaledHeight
-        );
-      }, 1000 / fps);
-    }
+    await this.startIntervalDrawing();
 
     if (this.debug) {
       this.enableDebugMode();
     }
 
-    const canvasStream = this.canvas.captureStream(fps);
+    const canvasStream = this.canvas.captureStream(this.fps);
     
     this.currentStream = new MediaStream(
       this.mockedVideoTracksHandler(
