@@ -1,5 +1,11 @@
 # @eatsjobs/media-mock
 
+## 0.5.3
+
+### Patch Changes
+
+- d1a642d: support change image in the stream on the fly
+
 ## 0.5.2
 
 ### Patch Changes
