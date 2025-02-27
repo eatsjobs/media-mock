@@ -17,13 +17,20 @@ const defaultSupportedConstraints: Record<
   height: true,
   sampleRate: false,
   sampleSize: false,
-  torch: false,
+  torch: true,
   volume: true,
   whiteBalanceMode: true,
   width: true,
   zoom: true,
 };
 
+const defaultSupportedConstraintsDesktop: Record<
+  keyof MediaTrackSupportedConstraints & "torch",
+  boolean
+> = {
+  ...defaultSupportedConstraints,
+  torch: false,
+};
 export interface DeviceConfig {
   videoResolutions: { width: number; height: number }[];
   mediaDeviceInfo: MockMediaDeviceInfo[];
@@ -223,6 +230,6 @@ export const devices: Record<DeviceName, DeviceConfig> = {
         },
       }),
     ],
-    supportedConstraints: defaultSupportedConstraints,
+    supportedConstraints: defaultSupportedConstraintsDesktop,
   },
 };
