@@ -157,6 +157,11 @@ export class MediaMockClass {
     if (this.intervalId) {
       clearInterval(this.intervalId);
     }
+    
+    const dpr = window.devicePixelRatio || 1;
+    const logicalWidth = this.resolution.width;
+    const logicalHeight = this.resolution.height;
+    
     if (isVideoURL(this.settings.mediaURL)) {
       const video = document.createElement("video");
       video.addEventListener("error", () => {
@@ -175,28 +180,29 @@ export class MediaMockClass {
       await playVideo(video);
 
       this.intervalId = setInterval(() => {
-        this.ctx?.clearRect(0, 0, this.resolution.width, this.resolution.height);
+        this.ctx?.clearRect(0, 0, logicalWidth, logicalHeight);
         this.ctx!.fillStyle = '#ffffff';
-        this.ctx?.fillRect(0, 0, this.resolution.width, this.resolution.height);
-        this.ctx?.drawImage(video, 0, 0, this.resolution.width, this.resolution.height);
+        this.ctx?.fillRect(0, 0, logicalWidth, logicalHeight);
+        this.ctx?.drawImage(video, 0, 0, logicalWidth, logicalHeight);
       }, 1000 / this.fps);
     } else {
-      this.currentImage = await loadImage(this.settings.mediaURL)    
+      this.currentImage = await loadImage(this.settings.mediaURL);
       this.currentImage.id = this.mediaMockImageId;
 
       if (this.debug) {
         console.log(`
-          Canvas: ${this.resolution.width}x${this.resolution.height}, 
+          Canvas: ${logicalWidth}x${logicalHeight} (DPR: ${dpr}), 
+          Physical canvas: ${this.canvas?.width}x${this.canvas?.height},
           Image: ${this.currentImage?.width}x${this.currentImage?.height}`
         );
       }
 
       this.intervalId = setInterval(() => {
         this.ctx!.fillStyle = '#ffffff';
-        this.ctx?.fillRect(0, 0, this.resolution.width, this.resolution.height);
+        this.ctx?.fillRect(0, 0, logicalWidth, logicalHeight);
 
         const imageAspect = this.currentImage!.width / this.currentImage!.height;
-        const canvasAspect = this.resolution.width / this.resolution.height;
+        const canvasAspect = logicalWidth / logicalHeight;
         
         let scaledWidth, scaledHeight, offsetX, offsetY;
         
@@ -205,16 +211,16 @@ export class MediaMockClass {
 
         if (imageAspect > canvasAspect) {
           // Image is wider (relative to height) than canvas
-          scaledWidth = this.resolution.width * safetyFactor;
-          scaledHeight = (this.resolution.width * safetyFactor) / imageAspect;
-          offsetX = (this.resolution.width - scaledWidth) / 2;
-          offsetY = (this.resolution.height - scaledHeight) / 2;
+          scaledWidth = logicalWidth * safetyFactor;
+          scaledHeight = (logicalWidth * safetyFactor) / imageAspect;
+          offsetX = (logicalWidth - scaledWidth) / 2;
+          offsetY = (logicalHeight - scaledHeight) / 2;
         } else {
           // Image is taller (relative to width) than canvas
-          scaledHeight = this.resolution.height * safetyFactor;
-          scaledWidth = (this.resolution.height * safetyFactor) * imageAspect;
-          offsetX = (this.resolution.width - scaledWidth) / 2;
-          offsetY = (this.resolution.height - scaledHeight) / 2;
+          scaledHeight = logicalHeight * safetyFactor;
+          scaledWidth = (logicalHeight * safetyFactor) * imageAspect;
+          offsetX = (logicalWidth - scaledWidth) / 2;
+          offsetY = (logicalHeight - scaledHeight) / 2;
         }
 
         this.ctx!.globalCompositeOperation = 'source-over';
@@ -413,13 +419,24 @@ export class MediaMockClass {
 
     this.canvas = document.createElement("canvas");
     this.canvas.id = this.mediaMockCanvasId;
-    this.canvas.width = this.resolution.width;
-    this.canvas.height = this.resolution.height;
+    
+    const dpr = window.devicePixelRatio || 1;
+    const logicalWidth = this.resolution.width;
+    const logicalHeight = this.resolution.height;
+    
+    this.canvas.width = logicalWidth * dpr;
+    this.canvas.height = logicalHeight * dpr;
+    
+    this.canvas.style.width = `${logicalWidth}px`;
+    this.canvas.style.height = `${logicalHeight}px`;
     
     this.ctx = this.canvas.getContext("2d", { alpha: true })!;
     
+    this.ctx.scale(dpr, dpr);
+    
+    this.ctx.imageSmoothingEnabled = true;
     this.ctx.fillStyle = '#ffffff';
-    this.ctx.fillRect(0, 0, this.resolution.width, this.resolution.height);
+    this.ctx.fillRect(0, 0, logicalWidth, logicalHeight);
 
     await this.startIntervalDrawing();
 
@@ -427,6 +444,7 @@ export class MediaMockClass {
       this.enableDebugMode();
     }
 
+    // For the captureStream, we use the fps parameter directly
     const canvasStream = this.canvas.captureStream(this.fps);
     
     this.currentStream = new MediaStream(
