@@ -1,5 +1,11 @@
 # @eatsjobs/media-mock
 
+## 0.6.0
+
+### Minor Changes
+
+- 9c195e0: Take into account devicePixelRatio before rendering the image into canvas
+
 ## 0.5.3
 
 ### Patch Changes
