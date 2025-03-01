@@ -210,9 +210,8 @@ describe("MediaMock", () => {
     MediaMock.setCanvasScaleFactor(scaleFactor);
     expect(MediaMock["settings"].canvasScaleFactor).toBe(scaleFactor);
     
-    // Test value clamping (values should be between 0.1 and 1)
     MediaMock.setCanvasScaleFactor(1.5);
-    expect(MediaMock["settings"].canvasScaleFactor).toBe(1);
+    expect(MediaMock["settings"].canvasScaleFactor).toBe(1.5);
     
     MediaMock.setCanvasScaleFactor(0.05);
     expect(MediaMock["settings"].canvasScaleFactor).toBe(0.1);

@@ -108,7 +108,7 @@ export class MediaMockClass {
     mediaURL: "./assets/640x480-sample.png",
     device: devices["iPhone 12"],
     constraints: devices["iPhone 12"].supportedConstraints,
-    canvasScaleFactor: 0.95, // Default scale factor (95%)
+    canvasScaleFactor: 1,
   };
 
   private readonly mediaMockImageId = "media-mock-image";
@@ -158,9 +158,7 @@ export class MediaMockClass {
       clearInterval(this.intervalId);
     }
     
-    const dpr = window.devicePixelRatio || 1;
-    const logicalWidth = this.resolution.width;
-    const logicalHeight = this.resolution.height;
+    const { width, height } = this.resolution;
     
     if (isVideoURL(this.settings.mediaURL)) {
       const video = document.createElement("video");
@@ -180,10 +178,10 @@ export class MediaMockClass {
       await playVideo(video);
 
       this.intervalId = setInterval(() => {
-        this.ctx?.clearRect(0, 0, logicalWidth, logicalHeight);
+        this.ctx?.clearRect(0, 0, width, height);
         this.ctx!.fillStyle = '#ffffff';
-        this.ctx?.fillRect(0, 0, logicalWidth, logicalHeight);
-        this.ctx?.drawImage(video, 0, 0, logicalWidth, logicalHeight);
+        this.ctx?.fillRect(0, 0, width, height);
+        this.ctx?.drawImage(video, 0, 0, width, height);
       }, 1000 / this.fps);
     } else {
       this.currentImage = await loadImage(this.settings.mediaURL);
@@ -191,18 +189,19 @@ export class MediaMockClass {
 
       if (this.debug) {
         console.log(`
-          Canvas: ${logicalWidth}x${logicalHeight} (DPR: ${dpr}), 
-          Physical canvas: ${this.canvas?.width}x${this.canvas?.height},
-          Image: ${this.currentImage?.width}x${this.currentImage?.height}`
+          Canvas: ${width}x${height}, 
+          Image: ${this.currentImage?.naturalWidth}x${this.currentImage?.naturalHeight}`
         );
       }
 
       this.intervalId = setInterval(() => {
+        this.ctx?.clearRect(0, 0, width, height);
         this.ctx!.fillStyle = '#ffffff';
-        this.ctx?.fillRect(0, 0, logicalWidth, logicalHeight);
+        this.ctx?.fillRect(0, 0, width, height);
 
-        const imageAspect = this.currentImage!.width / this.currentImage!.height;
-        const canvasAspect = logicalWidth / logicalHeight;
+        const { naturalWidth, naturalHeight } = this.currentImage!;
+        const imageAspect = naturalWidth / naturalHeight;
+        const canvasAspect = width / height;
         
         let scaledWidth, scaledHeight, offsetX, offsetY;
         
@@ -211,16 +210,16 @@ export class MediaMockClass {
 
         if (imageAspect > canvasAspect) {
           // Image is wider (relative to height) than canvas
-          scaledWidth = logicalWidth * safetyFactor;
-          scaledHeight = (logicalWidth * safetyFactor) / imageAspect;
-          offsetX = (logicalWidth - scaledWidth) / 2;
-          offsetY = (logicalHeight - scaledHeight) / 2;
+          scaledWidth = width * safetyFactor;
+          scaledHeight = (width * safetyFactor) / imageAspect;
+          offsetX = (width - scaledWidth) / 2;
+          offsetY = (height - scaledHeight) / 2;
         } else {
           // Image is taller (relative to width) than canvas
-          scaledHeight = logicalHeight * safetyFactor;
-          scaledWidth = (logicalHeight * safetyFactor) * imageAspect;
-          offsetX = (logicalWidth - scaledWidth) / 2;
-          offsetY = (logicalHeight - scaledHeight) / 2;
+          scaledHeight = height * safetyFactor;
+          scaledWidth = (height * safetyFactor) * imageAspect;
+          offsetX = (width - scaledWidth) / 2;
+          offsetY = (height - scaledHeight) / 2;
         }
 
         this.ctx!.globalCompositeOperation = 'source-over';
@@ -395,15 +394,15 @@ export class MediaMockClass {
 
   /**
    * Set the scale factor for the image in the canvas.
-   * Values between 0 and 1, where lower values create more margin,
+   * Values between 0 and N, where lower values create more margin,
    * and higher values fill more of the canvas.
    *
    * @public
-   * @param {number} factor - Scale factor between 0 and 1
+   * @param {number} factor - Scale factor between 0 and N
    * @returns {typeof MediaMock}
    */
   public setCanvasScaleFactor(factor: number): typeof MediaMock {
-    this.settings.canvasScaleFactor = Math.max(0.1, Math.min(1, factor));
+    this.settings.canvasScaleFactor = Math.max(0.1, factor);
     return this;
   }
 
@@ -420,23 +419,15 @@ export class MediaMockClass {
     this.canvas = document.createElement("canvas");
     this.canvas.id = this.mediaMockCanvasId;
     
-    const dpr = window.devicePixelRatio || 1;
-    const logicalWidth = this.resolution.width;
-    const logicalHeight = this.resolution.height;
+    const { width, height } = this.resolution;
     
-    this.canvas.width = logicalWidth * dpr;
-    this.canvas.height = logicalHeight * dpr;
+    this.canvas.width = width;
+    this.canvas.height = height;
     
-    this.canvas.style.width = `${logicalWidth}px`;
-    this.canvas.style.height = `${logicalHeight}px`;
+    this.ctx = this.canvas.getContext("2d")!;
     
-    this.ctx = this.canvas.getContext("2d", { alpha: true })!;
-    
-    this.ctx.scale(dpr, dpr);
-    
-    this.ctx.imageSmoothingEnabled = true;
     this.ctx.fillStyle = '#ffffff';
-    this.ctx.fillRect(0, 0, logicalWidth, logicalHeight);
+    this.ctx.fillRect(0, 0, width, height);
 
     await this.startIntervalDrawing();
 
