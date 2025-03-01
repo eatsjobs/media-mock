@@ -1,5 +1,11 @@
 # @eatsjobs/media-mock
 
+## 0.7.0
+
+### Minor Changes
+
+- 1da1457: Allow scale factor more than 1
+
 ## 0.6.0
 
 ### Minor Changes
