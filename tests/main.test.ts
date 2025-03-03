@@ -83,7 +83,7 @@ describe("MediaMock", () => {
       devices["iPhone 12"]
     );
 
-    expect(resolution).toEqual({ width: 1920, height: 1080 });
+    expect(resolution).toEqual({ width: 1080, height: 1920 });
   });
 
   it("should unmock properly", () => {
@@ -110,8 +110,10 @@ describe("MediaMock", () => {
       video: { width: 1920, height: 1080 },
     });
     const settings = stream.getVideoTracks()[0].getSettings();
-    expect(settings.width).toBe(1920);
-    expect(settings.height).toBe(1080);
+    // check if the device is in portrait mode
+    expect(window.innerHeight > window.innerWidth).toBe(true);
+    expect(settings.width).toBe(1080);
+    expect(settings.height).toBe(1920);
   });
 
   it("should append debug elements to the DOM", async () => {
