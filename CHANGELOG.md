@@ -1,5 +1,11 @@
 # @eatsjobs/media-mock
 
+## 0.8.0
+
+### Minor Changes
+
+- 925c9d9: getResolution now takes into account the device orientation
+
 ## 0.7.0
 
 ### Minor Changes
