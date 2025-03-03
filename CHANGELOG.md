@@ -1,5 +1,11 @@
 # @eatsjobs/media-mock
 
+## 0.8.1
+
+### Patch Changes
+
+- 0.8.1
+
 ## 0.8.0
 
 ### Minor Changes
