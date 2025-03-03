@@ -202,10 +202,9 @@ export class MediaMockClass {
         const { naturalWidth, naturalHeight } = this.currentImage!;
         const imageAspect = naturalWidth / naturalHeight;
         const canvasAspect = width / height;
-        
+
         let scaledWidth, scaledHeight, offsetX, offsetY;
         
-        // Use the configurable scale factor from settings
         const safetyFactor = this.settings.canvasScaleFactor;
 
         if (imageAspect > canvasAspect) {
@@ -222,7 +221,6 @@ export class MediaMockClass {
           offsetY = (height - scaledHeight) / 2;
         }
 
-        this.ctx!.globalCompositeOperation = 'source-over';
         this.ctx?.drawImage(
           this.currentImage!,
           offsetX,
@@ -456,18 +454,66 @@ export class MediaMockClass {
     return 30;
   }
 
+  /**
+   * Get the appropriate resolution based on device orientation
+   * @param constraints Media constraints
+   * @param deviceConfig Device configuration
+   * @returns Resolution object with width and height
+   */
   private getResolution(
     constraints: MediaStreamConstraints,
     deviceConfig: DeviceConfig
   ) {
+    // First check if we're in portrait or landscape mode
+    const isPortrait = window.innerHeight > window.innerWidth;
+    
+    // Get target dimensions from constraints
     const targetWidth = (constraints.video as MediaTrackConstraints).width || {
       ideal: 640,
     };
-    const targetHeight = (constraints.video as MediaTrackConstraints)
-      .height || { ideal: 480 };
+    const targetHeight = (constraints.video as MediaTrackConstraints).height || { 
+      ideal: 480 
+    };
 
-    return (
-      deviceConfig.videoResolutions.find(
+    // Find matching resolution based on orientation
+    let matchedResolution;
+    
+    if (isPortrait) {
+      // In portrait mode, look for taller resolutions or swap dimensions
+      matchedResolution = deviceConfig.videoResolutions.find(
+        (res) => 
+          res.height > res.width && // Find portrait-oriented resolutions first
+          (typeof targetHeight === "number"
+            ? res.height === targetHeight
+            : res.height === targetHeight.ideal) &&
+          (typeof targetWidth === "number"
+            ? res.width === targetWidth
+            : res.width === targetWidth.ideal)
+      );
+      
+      // If no portrait resolution found, try to find a landscape one to swap
+      if (!matchedResolution) {
+        const landscapeRes = deviceConfig.videoResolutions.find(
+          (res) =>
+            (typeof targetWidth === "number"
+              ? res.height === targetWidth  // Note: swapped dimensions
+              : res.height === targetWidth.ideal) &&
+            (typeof targetHeight === "number"
+              ? res.width === targetHeight  // Note: swapped dimensions
+              : res.width === targetHeight.ideal)
+        );
+        
+        // If found, swap dimensions
+        if (landscapeRes) {
+          matchedResolution = {
+            width: landscapeRes.height,
+            height: landscapeRes.width
+          };
+        }
+      }
+    } else {
+      // Standard landscape matching
+      matchedResolution = deviceConfig.videoResolutions.find(
         (res) =>
           (typeof targetWidth === "number"
             ? res.width === targetWidth
@@ -475,8 +521,28 @@ export class MediaMockClass {
           (typeof targetHeight === "number"
             ? res.height === targetHeight
             : res.height === targetHeight.ideal)
-      ) || deviceConfig.videoResolutions[0]
-    );
+      );
+    }
+    
+    // If still no match, use most appropriate resolution based on orientation
+    if (!matchedResolution) {
+      if (isPortrait) {
+        // Find the first portrait resolution or create one by swapping
+        matchedResolution = deviceConfig.videoResolutions.find(res => res.height > res.width);
+        
+        if (!matchedResolution && deviceConfig.videoResolutions.length > 0) {
+          // If no portrait resolutions, take first landscape and swap
+          const firstRes = deviceConfig.videoResolutions[0];
+          matchedResolution = {
+            width: firstRes.height,
+            height: firstRes.width
+          };
+        }
+      }
+    }
+    
+    // Final fallback to first resolution
+    return matchedResolution || deviceConfig.videoResolutions[0];
   }
 }
 

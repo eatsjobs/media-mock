@@ -57,6 +57,11 @@ export const devices: Record<DeviceName, DeviceConfig> = {
       { width: 1920, height: 1080 },
       { width: 1280, height: 720 },
       { width: 640, height: 480 },
+      { width: 320, height: 240 },
+      { width: 1080, height: 1920 },
+      { width: 720, height: 1280 },
+      { width: 480, height: 640 },
+      { width: 240, height: 320 },
     ],
     mediaDeviceInfo: [
       createMediaDeviceInfo({
@@ -141,6 +146,9 @@ export const devices: Record<DeviceName, DeviceConfig> = {
       { width: 1920, height: 1080 },
       { width: 1280, height: 720 },
       { width: 640, height: 480 },
+      { width: 1080, height: 1920 },
+      { width: 720, height: 1280 },
+      { width: 480, height: 640 },
     ],
     mediaDeviceInfo: [
       createMediaDeviceInfo({
