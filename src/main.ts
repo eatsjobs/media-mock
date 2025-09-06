@@ -1,18 +1,21 @@
 import { devices, MediaMock } from "../lib/main.ts";
 
 async function startStream() {
-  const videoElement = document.querySelector<HTMLVideoElement>("video");
-  const assetURL = "/assets/ean8_12345670.png"; // https://www.pexels.com/video/signing-the-parcel-4440957/
-  MediaMock.setMediaURL(assetURL)
-    .setMockedVideoTracksHandler((tracks) => {
-      const capabilities = tracks[0].getCapabilities();
-      tracks[0].getCapabilities = () => ({
-        ...capabilities,
-        whatever: 1,
-      });
-      return tracks;
-    })
-    .mock(devices["iPhone 12"]);
+  const videoElement = document.querySelector<HTMLVideoElement>(
+    "#video",
+  ) as HTMLVideoElement;
+  // const assetURL = "/assets/ean8_12345670.png"; // https://www.pexels.com/video/signing-the-parcel-4440957/
+  const videoAssetURL = "/assets/hd_1280_720_25fps.mp4";
+  MediaMock.setMockedVideoTracksHandler((tracks) => {
+    const capabilities = tracks[0].getCapabilities();
+    tracks[0].getCapabilities = () => ({
+      ...capabilities,
+      whatever: 1,
+    });
+    return tracks;
+  }).mock(devices["iPhone 12"]);
+
+  await MediaMock.setMediaURL(videoAssetURL);
 
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -23,9 +26,9 @@ async function startStream() {
       },
     });
 
-    videoElement!.srcObject = stream;
+    videoElement.srcObject = stream;
 
-    await videoElement!.play();
+    await videoElement.play();
 
     const devices = await navigator.mediaDevices.enumerateDevices();
     console.log("Devices:", devices);

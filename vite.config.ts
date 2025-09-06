@@ -1,6 +1,6 @@
-import { codecovVitePlugin } from "@codecov/vite-plugin";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { codecovVitePlugin } from "@codecov/vite-plugin";
 import dts from "vite-plugin-dts";
 import { defineConfig } from "vitest/config";
 
@@ -30,16 +30,16 @@ export default defineConfig(({ command }) => ({
     include: ["@vitest/coverage-v8/browser"],
   },
   build: {
-    minify: 'esbuild',
+    minify: "esbuild",
     lib: {
       entry: "./lib/main.ts",
-      name: "MediaMock", 
+      name: "MediaMock",
       fileName: (format) => {
-        if (format === 'umd') return 'media-mock.umd.min.js';
-        if (format === 'cjs') return 'media-mock.cjs';
-        return 'media-mock.js';
+        if (format === "umd") return "media-mock.umd.min.js";
+        if (format === "cjs") return "media-mock.cjs";
+        return "media-mock.js";
       },
-      formats: ['es', 'cjs', 'umd'],
+      formats: ["es", "cjs", "umd"],
     },
     rollupOptions: {
       external: ["**.test.ts", "**.test.tsx", "**.spec.ts", "**.spec.tsx"],
@@ -56,25 +56,28 @@ export default defineConfig(({ command }) => ({
           browser: "chromium",
           headless: true,
           launch: {
-            args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream']
-          }
+            args: [
+              "--use-fake-ui-for-media-stream",
+              "--use-fake-device-for-media-stream",
+            ],
+          },
         },
         {
           browser: "firefox",
           headless: true,
           launch: {
             firefoxUserPrefs: {
-              'media.navigator.permission.disabled': true,
-              'media.navigator.streams.fake': true
-            }
-          }
+              "media.navigator.permission.disabled": true,
+              "media.navigator.streams.fake": true,
+            },
+          },
         },
         {
           browser: "webkit",
           headless: true,
           launch: {
-            args: ['--enable-media-stream', '--use-fake-ui-for-media-stream']
-          }
+            args: ["--enable-media-stream", "--use-fake-ui-for-media-stream"],
+          },
         },
       ],
     },
@@ -83,10 +86,10 @@ export default defineConfig(({ command }) => ({
     },
     teardownTimeout: 5000,
     hookTimeout: 10000,
-    pool: 'threads',
-    forceRerunTriggers: ['**/vite.config.*'],
+    pool: "threads",
+    forceRerunTriggers: ["**/vite.config.*"],
   },
-  publicDir: command === 'build' ? false : "public", // Don't copy public assets to dist for library builds, but allow for dev/test
+  publicDir: command === "build" ? false : "public", // Don't copy public assets to dist for library builds, but allow for dev/test
   plugins: [
     dts({
       insertTypesEntry: true,
@@ -98,7 +101,7 @@ export default defineConfig(({ command }) => ({
         emitDeclarationOnly: true,
       },
     }),
-    ...(command === 'build' ? [duplicateDTSPlugin()] : []),
+    ...(command === "build" ? [duplicateDTSPlugin()] : []),
     codecovVitePlugin({
       enableBundleAnalysis: process.env.CODECOV_TOKEN !== undefined,
       bundleName: "@eatsjobs/media-mock",

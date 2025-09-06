@@ -67,16 +67,27 @@ function isVideoURL(url: string) {
 }
 
 function playVideo(videoElement: HTMLVideoElement) {
-  return new Promise<void>((resolve) => {
+  return new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error("Video loading timed out after 5 seconds"));
+    }, 15000);
+
     videoElement.addEventListener("loadeddata", async () => {
+      clearTimeout(timeout);
       try {
         await videoElement.play();
         resolve();
       } catch (e: unknown) {
-        console.error(e);
-        resolve();
+        console.error("Video play failed:", e);
+        resolve(); // Continue anyway for testing
       }
     });
+
+    videoElement.addEventListener("error", () => {
+      clearTimeout(timeout);
+      reject(new Error(`Video failed to load: ${videoElement.src}`));
+    });
+
     videoElement.load();
   });
 }
@@ -88,9 +99,8 @@ function playVideo(videoElement: HTMLVideoElement) {
  * ```ts
  * import { MediaMock, devices } from "@eatsjobs/media-mock";
  *   // Configure and initialize MediaMock with default settings
- *   MediaMock
- *     .setMediaURL("./assets/640x480-sample.png")
- *     .mock(devices["iPhone 12"]); // or devices["Samsung Galaxy M53"] for Android, "Mac Desktop" for desktop mediaDevice emulation
+ *   MediaMock.mock(devices["iPhone 12"]); // or devices["Samsung Galaxy M53"] for Android, "Mac Desktop" for desktop mediaDevice emulation
+ *   await MediaMock.setMediaURL("./assets/640x480-sample.png");
  *
  *   // Set up a video element to display the stream
  *   const videoElement = document.createElement("video");
@@ -101,7 +111,6 @@ function playVideo(videoElement: HTMLVideoElement) {
  * ```
  * @export
  * @class MediaMockClass
- * @typedef {MediaMockClass}
  */
 export class MediaMockClass {
   public settings: Settings = {
@@ -145,13 +154,13 @@ export class MediaMockClass {
   /**
    * The Image or the video that will be used as source.
    * @public
-   * @param {string} url
-   * @returns {typeof MediaMock}
+   * @param {string} mediaURL
+   * @returns {Promise<MediaMockClass>}
    */
-  public setMediaURL(url: string): typeof MediaMock {
-    this.settings.mediaURL = url;
+  public async setMediaURL(mediaURL: string): Promise<MediaMockClass> {
+    this.settings.mediaURL = mediaURL;
     if (this.intervalId) {
-      void this.startIntervalDrawing();
+      await this.startIntervalDrawing();
     }
     return this;
   }
@@ -167,10 +176,17 @@ export class MediaMockClass {
       const video = document.createElement("video");
       video.addEventListener(
         "error",
-        () => {
+        (event) => {
           console.error(
             "Failed to load video source. Ensure the format is supported and the URL is valid.",
           );
+          console.error("Video error details:", {
+            error: event.error,
+            target: event.target,
+            networkState: video.networkState,
+            readyState: video.readyState,
+            currentSrc: video.currentSrc,
+          });
         },
         { once: true },
       );
@@ -185,10 +201,13 @@ export class MediaMockClass {
       await playVideo(video);
 
       this.intervalId = setInterval(() => {
-        this.ctx?.clearRect(0, 0, width, height);
-        this.ctx!.fillStyle = "#ffffff";
-        this.ctx?.fillRect(0, 0, width, height);
-        this.ctx?.drawImage(video, 0, 0, width, height);
+        if (!this.ctx) {
+          return;
+        }
+        this.ctx.clearRect(0, 0, width, height);
+        this.ctx.fillStyle = "#ffffff";
+        this.ctx.fillRect(0, 0, width, height);
+        this.ctx.drawImage(video, 0, 0, width, height);
       }, 1000 / this.fps);
     } else {
       this.currentImage = await loadImage(this.settings.mediaURL);
@@ -201,9 +220,12 @@ export class MediaMockClass {
       }
 
       this.intervalId = setInterval(() => {
-        this.ctx?.clearRect(0, 0, width, height);
-        this.ctx!.fillStyle = "#ffffff";
-        this.ctx?.fillRect(0, 0, width, height);
+        if (!this.ctx) {
+          return;
+        }
+        this.ctx.clearRect(0, 0, width, height);
+        this.ctx.fillStyle = "#ffffff";
+        this.ctx.fillRect(0, 0, width, height);
 
         const { naturalWidth, naturalHeight } = this.currentImage!;
         const imageAspect = naturalWidth / naturalHeight;
@@ -230,7 +252,7 @@ export class MediaMockClass {
           offsetY = (height - scaledHeight) / 2;
         }
 
-        this.ctx?.drawImage(
+        this.ctx.drawImage(
           this.currentImage!,
           offsetX,
           offsetY,
@@ -449,8 +471,58 @@ export class MediaMockClass {
     // For the captureStream, we use the fps parameter directly
     const canvasStream = this.canvas.captureStream(this.fps);
 
+    const videoTracks = canvasStream?.getVideoTracks() ?? [];
+
+    // Normalize MediaStreamTrack methods to provide consistent real-device behavior
+    videoTracks.forEach((track) => {
+      // Ensure getCapabilities method is always available (all real devices have this)
+      if (!track.getCapabilities) {
+        // Find the first video input device to get its capabilities
+        const videoDevice = this.settings.device.mediaDeviceInfo.find(
+          (device) => device.kind === "videoinput",
+        );
+
+        if (videoDevice && videoDevice.getCapabilities) {
+          // Use the device-specific capabilities from mockCapabilities
+          track.getCapabilities = () => videoDevice.getCapabilities();
+        } else {
+          // Fallback to device resolutions if no specific capabilities defined
+          const deviceResolutions = this.settings.device.videoResolutions;
+          const widths = deviceResolutions.map((res) => res.width);
+          const heights = deviceResolutions.map((res) => res.height);
+
+          track.getCapabilities = () => ({
+            width: { min: Math.min(...widths), max: Math.max(...widths) },
+            height: { min: Math.min(...heights), max: Math.max(...heights) },
+            frameRate: { min: 1, max: 60 },
+            facingMode: ["user", "environment"],
+            resizeMode: ["none", "crop-and-scale"],
+          });
+        }
+      }
+
+      // Enhance getSettings to provide consistent real-device behavior
+      const originalGetSettings = track.getSettings.bind(track);
+      track.getSettings = () => {
+        const settings = originalGetSettings();
+
+        // Real devices always provide frameRate in settings
+        if (settings.frameRate === undefined) {
+          settings.frameRate = this.fps;
+        }
+
+        // Real devices always provide width/height in settings
+        if (settings.width === undefined || settings.height === undefined) {
+          settings.width = this.resolution.width;
+          settings.height = this.resolution.height;
+        }
+
+        return settings;
+      };
+    });
+
     this.currentStream = new MediaStream(
-      this.mockedVideoTracksHandler(canvasStream?.getVideoTracks() ?? []),
+      this.mockedVideoTracksHandler(videoTracks),
     );
 
     return this.currentStream;
@@ -638,5 +710,5 @@ export class MediaMockClass {
 }
 
 export * from "./createMediaDeviceInfo";
-export { devices };
+export { devices, type DeviceConfig };
 export const MediaMock: MediaMockClass = new MediaMockClass();

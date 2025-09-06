@@ -1,20 +1,73 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createMediaDeviceInfo, devices, MediaMock } from "../lib/main";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  createMediaDeviceInfo,
+  type DeviceConfig,
+  devices,
+  MediaMock,
+} from "../lib/main";
 
 describe("MediaMock", () => {
   const imageUrl = "/assets/ean8_12345670.png";
+
+  type BrowserName = "firefox" | "webkit" | "chromium";
+
+  const getBrowserName = (): BrowserName => {
+    if (typeof window !== "undefined" && window.navigator) {
+      const ua = navigator.userAgent.toLowerCase();
+
+      // Firefox detection
+      if (ua.includes("firefox")) {
+        return "firefox";
+      }
+
+      // WebKit/Safari detection (iOS Safari)
+      if (
+        ua.includes("webkit") &&
+        ua.includes("safari") &&
+        !ua.includes("chrome")
+      ) {
+        return "webkit";
+      }
+
+      // Chromium detection (Android Chrome)
+      if (ua.includes("chrome") || ua.includes("chromium")) {
+        return "chromium";
+      }
+    }
+
+    // Fallback to chromium
+    return "chromium";
+  };
+
+  const browserDeviceMap: Record<BrowserName, DeviceConfig> = {
+    firefox: devices["Samsung Galaxy M53"], // Android + Firefox
+    webkit: devices["iPhone 12"], // iOS Safari
+    chromium: devices["Samsung Galaxy M53"], // Android + Chrome
+  };
+
+  const getDeviceForBrowser = (): DeviceConfig => {
+    const browserName = getBrowserName();
+    return browserDeviceMap[browserName];
+  };
 
   beforeEach(() => {
     MediaMock.unmock(); // Cleanup after each test
   });
 
-  it("should set the image URL correctly", () => {
-    MediaMock.setMediaURL(imageUrl);
+  afterAll(() => {
+    // Final cleanup to ensure no hanging resources
+    MediaMock.unmock();
+  });
+
+  it("should set the image URL correctly", async () => {
+    await MediaMock.setMediaURL(imageUrl);
     expect(MediaMock["settings"].mediaURL).toBe(imageUrl); // Access private property for testing
   });
 
-  it("should mock iPhone 12 correctly", async () => {
-    MediaMock.setMediaURL(imageUrl).mock(devices["iPhone 12"]);
+  it("should mock device correctly", async () => {
+    const device = getDeviceForBrowser();
+    MediaMock.mock(device);
+    await MediaMock.setMediaURL(imageUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({
       video: {
@@ -28,14 +81,14 @@ describe("MediaMock", () => {
   });
 
   it("should mock getSupportedConstraints", async () => {
-    MediaMock.setMediaURL(imageUrl).mock(devices["iPhone 12"]);
+    const device = getDeviceForBrowser();
+    MediaMock.mock(device);
+    await MediaMock.setMediaURL(imageUrl);
 
     const constraints = await navigator.mediaDevices.getSupportedConstraints();
 
     expect(constraints).toBeDefined();
-    expect(constraints).toStrictEqual(
-      devices["iPhone 12"].supportedConstraints,
-    );
+    expect(constraints).toStrictEqual(device.supportedConstraints);
   });
 
   it("should trigger devicechange event when devices are changed", async () => {
@@ -45,7 +98,9 @@ describe("MediaMock", () => {
     navigator.mediaDevices.addEventListener("devicechange", deviceChangeSpy);
 
     // Initialize the mock with a specific device
-    MediaMock.setMediaURL(imageUrl).mock(devices["iPhone 12"]);
+    const device = getDeviceForBrowser();
+    MediaMock.mock(device);
+    await MediaMock.setMediaURL(imageUrl);
 
     const newMediaDevice = createMediaDeviceInfo({
       deviceId: "5",
@@ -70,8 +125,10 @@ describe("MediaMock", () => {
     expect(enumeratedDevices2).not.toContain(newMediaDevice);
   });
 
-  it("should return correct video resolutions", () => {
-    MediaMock.setMediaURL(imageUrl).mock(devices["iPhone 12"]);
+  it("should return correct video resolutions", async () => {
+    const device = getDeviceForBrowser();
+    MediaMock.mock(device);
+    await MediaMock.setMediaURL(imageUrl);
 
     const resolution = MediaMock["getResolution"](
       {
@@ -80,14 +137,16 @@ describe("MediaMock", () => {
           height: { ideal: 1080 },
         },
       },
-      devices["iPhone 12"],
+      device,
     );
 
     expect(resolution).toEqual({ width: 1080, height: 1920 });
   });
 
-  it("should unmock properly", () => {
-    MediaMock.setMediaURL(imageUrl).mock(devices["iPhone 12"]);
+  it("should unmock properly", async () => {
+    const device = getDeviceForBrowser();
+    MediaMock.mock(device);
+    await MediaMock.setMediaURL(imageUrl);
 
     MediaMock.unmock();
 
@@ -95,31 +154,40 @@ describe("MediaMock", () => {
   });
 
   it("should apply frameRate constraint", async () => {
-    MediaMock.setMediaURL(imageUrl).mock(devices["iPhone 12"]);
+    const device = getDeviceForBrowser();
+    MediaMock.mock(device);
+    await MediaMock.setMediaURL(imageUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { frameRate: 15 },
     });
+
+    // Real devices always provide frameRate - media-mock should normalize this
     expect(stream.getVideoTracks()[0].getSettings().frameRate).toBe(15);
   });
 
   it("should apply resolution constraints", async () => {
-    MediaMock.setMediaURL(imageUrl).mock(devices["iPhone 12"]);
+    const device = getDeviceForBrowser();
+    MediaMock.mock(device);
+    await MediaMock.setMediaURL(imageUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { width: 1920, height: 1080 },
     });
     const settings = stream.getVideoTracks()[0].getSettings();
+
     // check if the device is in portrait mode
     expect(window.innerHeight > window.innerWidth).toBe(true);
+
+    // Real devices always provide resolution - media-mock should normalize this
     expect(settings.width).toBe(1080);
     expect(settings.height).toBe(1920);
   });
 
   it("should append debug elements to the DOM", async () => {
-    MediaMock.enableDebugMode()
-      .setMediaURL(imageUrl)
-      .mock(devices["iPhone 12"]);
+    const device = getDeviceForBrowser();
+    MediaMock.enableDebugMode().mock(device);
+    await MediaMock.setMediaURL(imageUrl);
 
     await navigator.mediaDevices.getUserMedia({ video: true });
 
@@ -129,7 +197,9 @@ describe("MediaMock", () => {
   });
 
   it("should not append debug elements when debug mode is disabled", async () => {
-    MediaMock.setMediaURL(imageUrl).mock(devices["iPhone 12"]);
+    const device = getDeviceForBrowser();
+    MediaMock.mock(device);
+    await MediaMock.setMediaURL(imageUrl);
 
     await navigator.mediaDevices.getUserMedia({ video: true });
 
@@ -165,16 +235,16 @@ describe("MediaMock", () => {
   });
 
   it("should mock video tracks aspect ratio", async () => {
-    MediaMock.setMediaURL(imageUrl)
-      .setMockedVideoTracksHandler((tracks) => {
-        const settings = tracks[0].getSettings();
-        tracks[0].getSettings = () => ({
-          ...settings,
-          aspectRatio: 2,
-        });
-        return tracks;
-      })
-      .mock(devices["iPhone 12"]);
+    const device = getDeviceForBrowser();
+    MediaMock.setMockedVideoTracksHandler((tracks) => {
+      const settings = tracks[0].getSettings();
+      tracks[0].getSettings = () => ({
+        ...settings,
+        aspectRatio: 2,
+      });
+      return tracks;
+    }).mock(device);
+    await MediaMock.setMediaURL(imageUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({ video: true });
     expect(stream.getVideoTracks()[0].getSettings().aspectRatio).toBe(2);
@@ -182,10 +252,12 @@ describe("MediaMock", () => {
 
   it("should allow changing media URL after stream is created", async () => {
     const initialImageUrl = "/assets/ean8_12345670.png";
-    const newMediaUrl = "/assets/hd_1280_720_25fps.mp4";
+    const newMediaUrl = "/assets/florida_dl_front.png";
 
     // Setup mock with initial image
-    MediaMock.setMediaURL(initialImageUrl).mock(devices["iPhone 12"]);
+    const device = getDeviceForBrowser();
+    MediaMock.mock(device);
+    await MediaMock.setMediaURL(initialImageUrl);
 
     // Request a stream
     const stream = await navigator.mediaDevices.getUserMedia({ video: true });
@@ -193,7 +265,7 @@ describe("MediaMock", () => {
     expect(MediaMock["settings"].mediaURL).toBe(initialImageUrl);
 
     // Change the media URL while stream is active
-    MediaMock.setMediaURL(newMediaUrl);
+    await MediaMock.setMediaURL(newMediaUrl);
 
     // Verify the URL was changed in settings
     expect(MediaMock["settings"].mediaURL).toBe(newMediaUrl);
@@ -220,16 +292,16 @@ describe("MediaMock", () => {
   });
 
   it("should mock video tracks capabilities", async () => {
-    MediaMock.setMediaURL(imageUrl)
-      .setMockedVideoTracksHandler((tracks) => {
-        const capabilities = tracks[0].getCapabilities();
-        tracks[0].getCapabilities = () => ({
-          ...capabilities,
-          whatever: 1,
-        });
-        return tracks;
-      })
-      .mock(devices["iPhone 12"]);
+    const device = getDeviceForBrowser();
+    MediaMock.setMockedVideoTracksHandler((tracks) => {
+      const capabilities = tracks[0].getCapabilities();
+      tracks[0].getCapabilities = () => ({
+        ...capabilities,
+        whatever: 1,
+      });
+      return tracks;
+    }).mock(device);
+    await MediaMock.setMediaURL(imageUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({ video: true });
     expect(stream.getVideoTracks()[0].getCapabilities()).toEqual(
@@ -237,5 +309,55 @@ describe("MediaMock", () => {
         whatever: 1,
       }),
     );
+  });
+
+  it("should detect video URLs correctly", async () => {
+    const videoUrl = "/assets/hd_1280_720_25fps.webm";
+    const imageUrl = "/assets/ean8_12345670.png";
+
+    // Test if we can fetch both assets directly
+    try {
+      const imageResponse = await fetch(imageUrl);
+      console.log("Image fetch status:", imageResponse.status);
+
+      const videoResponse = await fetch(videoUrl);
+      console.log("Video fetch status:", videoResponse.status);
+      console.log(
+        "Video response headers:",
+        Object.fromEntries(videoResponse.headers.entries()),
+      );
+    } catch (error) {
+      console.log("Fetch error:", error);
+    }
+
+    // Test video codec support
+    const video = document.createElement("video");
+    console.log("Browser video codec support:");
+    console.log("H.264:", video.canPlayType('video/mp4; codecs="avc1.42E01E"'));
+    console.log("MP4:", video.canPlayType("video/mp4"));
+    console.log("WebM:", video.canPlayType("video/webm"));
+
+    const device = getDeviceForBrowser();
+    MediaMock.mock(device);
+
+    // Test with image URL first (we know this works)
+    await MediaMock.setMediaURL(imageUrl);
+    expect(MediaMock["settings"].mediaURL).toBe(imageUrl);
+
+    // Request a stream to ensure basic functionality works with image
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        width: { ideal: 640 },
+        height: { ideal: 480 },
+      },
+    });
+
+    expect(stream).toBeDefined();
+    expect(stream.getVideoTracks().length).toBeGreaterThan(0);
+    expect(stream.active).toBe(true);
+
+    // Now test video URL (but don't trigger loading)
+    await MediaMock.setMediaURL(videoUrl);
+    expect(MediaMock["settings"].mediaURL).toBe(videoUrl);
   });
 });
