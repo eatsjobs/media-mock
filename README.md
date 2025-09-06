@@ -62,9 +62,8 @@ To start using MediaMock, initialize the library, configure a mock media stream,
 import { MediaMock, devices } from "@eatsjobs/media-mock";
 
 // Configure and initialize MediaMock with default settings
-MediaMock
-  .setMediaURL("./assets/640x480-sample.png")
-  .mock(devices["iPhone 12"]); // or devices["Samsung Galaxy M53"] for Android, "Mac Desktop" for desktop mediaDevice emulation
+MediaMock.mock(devices["iPhone 12"]); // or devices["Samsung Galaxy M53"] for Android, "Mac Desktop" for desktop mediaDevice emulation
+await MediaMock.setMediaURL("./assets/640x480-sample.png");
 
 // Set up a video element to display the stream
 const videoElement = document.createElement("video");
@@ -73,9 +72,9 @@ document.body.appendChild(videoElement);
 videoElement.srcObject = await navigator.mediaDevices.getUserMedia({ video: true });
 videoElement.play();
 
-const devices = await navigator.mediaDevices.enumerateDevices();
-const supportedConstraints = await navigator.mediaDevices.getSupportedConstraints();
-console.log(devices, supportedConstraints);
+const enumeratedDevices = await navigator.mediaDevices.enumerateDevices();
+const supportedConstraints = navigator.mediaDevices.getSupportedConstraints();
+console.log(enumeratedDevices, supportedConstraints);
 ```
 
 ## Configuring a Custom Device and Constraints
@@ -83,9 +82,8 @@ console.log(devices, supportedConstraints);
 You can set a specific device and define video constraints such as resolution and frame rate.
 
 ```typescript
-MediaMock
-  .setMediaURL("./assets/640x480-sample.png")
-  .mock(devices["Mac Desktop"])
+MediaMock.mock(devices["Mac Desktop"]);
+await MediaMock.setMediaURL("./assets/640x480-sample.png");
 ```
 
 ## API Documentation
@@ -94,15 +92,37 @@ MediaMock
   
 The main class of the library, used to configure, initialize, and manage the mock media devices.
 
-#### `setMediaURL(path: string): MediaMock`
+#### `async setMediaURL(path: string): Promise<MediaMock>`
 
-Sets a custom image URL or a video url to be uses as the source and returns the instance for chaining.
+Sets a custom image URL or video URL to be used as the source and returns the instance for chaining. This method is now asynchronous to properly handle media loading.
 
-- **path**: `string` - Path to the image.
+- **path**: `string` - Path to the image or video file.
 
 #### `enableDebugMode(): MediaMock`
 
-Enables debug mode, appending the mock canvas and image elements to the DOM for visualization. This allows you to see what’s being used as a video feed during tests.
+Enables debug mode, appending the mock canvas and image elements to the DOM for visualization. This allows you to see what's being used as a video feed during tests.
+
+#### `disableDebugMode(): MediaMock`
+
+Disables debug mode and removes the mock canvas and image elements from the DOM.
+
+#### `setCanvasScaleFactor(factor: number): MediaMock`
+
+Sets the scale factor for the image in the canvas. Lower values create more margin, higher values fill more of the canvas.
+
+- **factor**: `number` - Scale factor between 0.1 and 1.0.
+
+#### `addMockDevice(device: MockMediaDeviceInfo): MediaMock`
+
+Adds a new mock device to the current device configuration and triggers a `devicechange` event.
+
+- **device**: `MockMediaDeviceInfo` - The mock device to add.
+
+#### `removeMockDevice(deviceId: string): MediaMock`
+
+Removes a mock device by its device ID and triggers a `devicechange` event.
+
+- **deviceId**: `string` - The ID of the device to remove.
 
 #### `setMockedVideoTracksHandler(handler: (tracks: MediaStreamTrack[]) => MediaStreamTrack[]): MediaMock`
 
@@ -127,17 +147,28 @@ Restores original `navigator.mediaDevices` methods by removing the mock properti
 
 Defines which `navigator.mediaDevices` methods should be mocked:
 
-- **getUserMedia**: `boolean` - Enables `navigator.mediaDevices.getUserMedia`.
-- **getSupportedConstraints**: `boolean` - Enables `navigator.mediaDevices.getSupportedConstraints`.
-- **enumerateDevices**: `boolean` - Enables `navigator.mediaDevices.enumerateDevices`.
+```typescript
+interface MockOptions {
+  mediaDevices: {
+    getUserMedia: boolean;
+    getSupportedConstraints: boolean;
+    enumerateDevices: boolean;
+  };
+}
+```
+
+- **mediaDevices.getUserMedia**: `boolean` - Enables `navigator.mediaDevices.getUserMedia`.
+- **mediaDevices.getSupportedConstraints**: `boolean` - Enables `navigator.mediaDevices.getSupportedConstraints`.
+- **mediaDevices.enumerateDevices**: `boolean` - Enables `navigator.mediaDevices.enumerateDevices`.
 
 ### `Settings`
 
-Interface that contains the mock settings for image URL, device configuration, and video constraints.
+Interface that contains the mock settings for media URL, device configuration, and video constraints.
 
-- **imageURL**: `string` - The URL of the image used as the video source.
+- **mediaURL**: `string` - The URL of the image or video used as the media source.
 - **device**: `DeviceConfig` - Specifies the configuration for the mock device, such as resolution and media information.
-- **constraints**: `Record<keyof MediaTrackSupportedConstraints & "torch", boolean>` - Specifies video constraints, like resolution and frame rate, for testing against browser media APIs.
+- **constraints**: `MediaTrackConstraints` - Specifies video constraints, like resolution and frame rate.
+- **canvasScaleFactor**: `number` - Scale factor for the image in the canvas (0.1-1.0).
 
 ---
 
@@ -173,9 +204,10 @@ import { MediaMock, devices } from "@eatsjobs/media-mock";
 
 // Configure and initialize MediaMock with default settings
 MediaMock
-  .setMediaURL("./assets/640x480-sample.png")
   .enableDebugMode()
   .mock(devices["iPhone 12"]); // or devices["Samsung Galaxy M53"] for Android, "Mac Desktop" for desktop mediaDevice emulation
+
+await MediaMock.setMediaURL("./assets/640x480-sample.png");
 
 // Set up a video element to display the stream
 const videoElement = document.createElement("video");
