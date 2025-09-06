@@ -24,8 +24,8 @@
     "ui-testing"
   ],
   "license": "MIT",
-  "umd:main": "./dist/media-mock.umd.cjs",
-  "unpkg": "./dist/media-mock.umd.cjs",
+  "umd:main": "./dist/media-mock.umd.min.js",
+  "unpkg": "./dist/media-mock.umd.min.js",
   "author": "@eatsjobs Pasquale Mangialavori",
   "type": "module",
   "sideEffects": false,
@@ -35,7 +35,7 @@
     "LICENSE",
     "CHANGELOG.md"
   ],
-  "main": "./dist/media-mock.umd.cjs",
+  "main": "./dist/media-mock.cjs",
   "module": "./dist/media-mock.js",
   "types": "./dist/main.d.ts",
   "exports": {
@@ -46,7 +46,7 @@
       },
       "require": {
         "types": "./dist/main.d.cts",
-        "default": "./dist/media-mock.umd.cjs"
+        "default": "./dist/media-mock.cjs"
       }
     }
   },
@@ -55,7 +55,7 @@
     "lint:fix": "biome check --fix",
     "dev": "vite",
     "build": "tsc && vite build",
-    "test": "vitest",
+    "test": "vitest --run",
     "test-coverage": "vitest --coverage",
     "changeset": "changeset",
     "version-packages": "changeset version",
@@ -63,17 +63,19 @@
     "check-types": "npx attw $(npm pack) --profile=node16"
   },
   "devDependencies": {
-    "@arethetypeswrong/cli": "~0.17.4",
+    "@arethetypeswrong/cli": "~0.18.2",
     "@biomejs/biome": "2.2.3",
-    "@changesets/cli": "^2.27.9",
-    "@codecov/vite-plugin": "^1.4.0",
-    "@vitest/browser": "^2.1.5",
-    "@vitest/coverage-v8": "^2.1.5",
-    "playwright": "^1.48.2",
-    "typescript": "~5.6.3",
-    "vite": "^5.4.11",
-    "vite-plugin-dts": "^4.5.0",
-    "vitest": "^2.1.5"
+    "@changesets/cli": "^2.29.6",
+    "@codecov/vite-plugin": "^1.9.1",
+    "@types/node": "^24.3.1",
+    "@vitest/browser": "^3.2.4",
+    "@vitest/coverage-v8": "^3.2.4",
+    "@vitest/ui": "^3.2.4",
+    "playwright": "^1.55.0",
+    "typescript": "~5.7.3",
+    "vite": "^6.3.5",
+    "vite-plugin-dts": "^4.5.4",
+    "vitest": "^3.2.4"
   },
   "engines": {
     "npm": ">=7.0.0",
