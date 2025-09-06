@@ -28,7 +28,7 @@ jobs:
         run: npx playwright install --with-deps
 
       - name: Run Tests with Coverage
-        run: npm run test -- --coverage
+        run: npm run test-coverage
 
       - name: Upload results to Codecov
         uses: codecov/codecov-action@v4

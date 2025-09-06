@@ -314,6 +314,7 @@ describe("MediaMock", () => {
   it("should detect video URLs correctly", async () => {
     const videoUrl = "/assets/hd_1280_720_25fps.webm";
     const imageUrl = "/assets/ean8_12345670.png";
+    // const video = document.createElement("video");
 
     // Test if we can fetch both assets directly
     try {
@@ -322,20 +323,18 @@ describe("MediaMock", () => {
 
       const videoResponse = await fetch(videoUrl);
       console.log("Video fetch status:", videoResponse.status);
-      console.log(
-        "Video response headers:",
-        Object.fromEntries(videoResponse.headers.entries()),
-      );
+      // console.log(
+      //   "Video response headers:",
+      //   Object.fromEntries(videoResponse.headers.entries()),
+      // );
     } catch (error) {
       console.log("Fetch error:", error);
+      // // Test video codec support
+      // console.log("Browser video codec support:");
+      // console.log("H.264:", video.canPlayType('video/mp4; codecs="avc1.42E01E"'));
+      // console.log("MP4:", video.canPlayType("video/mp4"));
+      // console.log("WebM:", video.canPlayType("video/webm"));
     }
-
-    // Test video codec support
-    const video = document.createElement("video");
-    console.log("Browser video codec support:");
-    console.log("H.264:", video.canPlayType('video/mp4; codecs="avc1.42E01E"'));
-    console.log("MP4:", video.canPlayType("video/mp4"));
-    console.log("WebM:", video.canPlayType("video/webm"));
 
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
