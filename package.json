@@ -51,6 +51,8 @@
     }
   },
   "scripts": {
+    "lint": "biome check",
+    "lint:fix": "biome check --fix",
     "dev": "vite",
     "build": "tsc && vite build",
     "test": "vitest",
@@ -61,6 +63,8 @@
     "check-types": "npx attw $(npm pack) --profile=node16"
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "~0.17.4",
+    "@biomejs/biome": "2.2.3",
     "@changesets/cli": "^2.27.9",
     "@codecov/vite-plugin": "^1.4.0",
     "@vitest/browser": "^2.1.5",
@@ -69,8 +73,7 @@
     "typescript": "~5.6.3",
     "vite": "^5.4.11",
     "vite-plugin-dts": "^4.5.0",
-    "vitest": "^2.1.5",
-    "@arethetypeswrong/cli": "~0.17.4"
+    "vitest": "^2.1.5"
   },
   "engines": {
     "npm": ">=7.0.0",

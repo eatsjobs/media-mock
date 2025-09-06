@@ -1,7 +1,7 @@
 export function defineProperty<T extends Record<string | symbol | number, any>>(
   targetObject: T,
   property: keyof T,
-  newValue: unknown
+  newValue: unknown,
 ): () => void {
   const original = targetObject[property];
   Object.defineProperty(targetObject, property, {

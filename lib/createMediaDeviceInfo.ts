@@ -11,7 +11,6 @@ export interface MockMediaDeviceInfo extends MediaDeviceInfo {
   getCapabilities: () => EnhancedMediaTrackCapabilities;
 }
 
-
 /**
  * Creates a mock MediaDeviceInfo object.
  *

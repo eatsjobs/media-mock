@@ -35,7 +35,7 @@ export interface Settings {
    */
   device: DeviceConfig;
   constraints: MediaTrackConstraints;
-  
+
   /**
    * Scale factor for the image in the canvas (0-1)
    * Lower values create more margin, higher values fill more of the canvas
@@ -133,11 +133,14 @@ export class MediaMockClass {
   private ctx: CanvasRenderingContext2D | undefined;
 
   private mockedVideoTracksHandler: (
-    tracks: MediaStreamTrack[]
+    tracks: MediaStreamTrack[],
   ) => MediaStreamTrack[] = (tracks) => tracks;
 
   private fps: number = 30;
-  private resolution: { width: number; height: number; } = { width: 640, height: 480 };
+  private resolution: { width: number; height: number } = {
+    width: 640,
+    height: 480,
+  };
 
   /**
    * The Image or the video that will be used as source.
@@ -152,21 +155,25 @@ export class MediaMockClass {
     }
     return this;
   }
-  
+
   private async startIntervalDrawing(): Promise<void> {
     if (this.intervalId) {
       clearInterval(this.intervalId);
     }
-    
+
     const { width, height } = this.resolution;
-    
+
     if (isVideoURL(this.settings.mediaURL)) {
       const video = document.createElement("video");
-      video.addEventListener("error", () => {
-        console.error(
-          "Failed to load video source. Ensure the format is supported and the URL is valid."
-        );
-      }, { once: true });
+      video.addEventListener(
+        "error",
+        () => {
+          console.error(
+            "Failed to load video source. Ensure the format is supported and the URL is valid.",
+          );
+        },
+        { once: true },
+      );
 
       video.src = this.settings.mediaURL;
       video.muted = true;
@@ -179,7 +186,7 @@ export class MediaMockClass {
 
       this.intervalId = setInterval(() => {
         this.ctx?.clearRect(0, 0, width, height);
-        this.ctx!.fillStyle = '#ffffff';
+        this.ctx!.fillStyle = "#ffffff";
         this.ctx?.fillRect(0, 0, width, height);
         this.ctx?.drawImage(video, 0, 0, width, height);
       }, 1000 / this.fps);
@@ -190,13 +197,12 @@ export class MediaMockClass {
       if (this.debug) {
         console.log(`
           Canvas: ${width}x${height}, 
-          Image: ${this.currentImage?.naturalWidth}x${this.currentImage?.naturalHeight}`
-        );
+          Image: ${this.currentImage?.naturalWidth}x${this.currentImage?.naturalHeight}`);
       }
 
       this.intervalId = setInterval(() => {
         this.ctx?.clearRect(0, 0, width, height);
-        this.ctx!.fillStyle = '#ffffff';
+        this.ctx!.fillStyle = "#ffffff";
         this.ctx?.fillRect(0, 0, width, height);
 
         const { naturalWidth, naturalHeight } = this.currentImage!;
@@ -204,7 +210,7 @@ export class MediaMockClass {
         const canvasAspect = width / height;
 
         let scaledWidth, scaledHeight, offsetX, offsetY;
-        
+
         const safetyFactor = this.settings.canvasScaleFactor;
 
         if (imageAspect > canvasAspect) {
@@ -216,7 +222,7 @@ export class MediaMockClass {
         } else {
           // Image is taller (relative to width) than canvas
           scaledHeight = height * safetyFactor;
-          scaledWidth = (height * safetyFactor) * imageAspect;
+          scaledWidth = height * safetyFactor * imageAspect;
           offsetX = (width - scaledWidth) / 2;
           offsetY = (height - scaledHeight) / 2;
         }
@@ -226,7 +232,7 @@ export class MediaMockClass {
           offsetX,
           offsetY,
           scaledWidth,
-          scaledHeight
+          scaledHeight,
         );
       }, 1000 / this.fps);
     }
@@ -253,7 +259,7 @@ export class MediaMockClass {
   public removeMockDevice(deviceId: string): typeof MediaMock {
     this.settings.device.mediaDeviceInfo =
       this.settings.device.mediaDeviceInfo.filter(
-        (device) => device.deviceId !== deviceId
+        (device) => device.deviceId !== deviceId,
       );
     this.triggerDeviceChange();
     return this;
@@ -307,7 +313,9 @@ export class MediaMockClass {
   }
 
   public setMockedVideoTracksHandler(
-    mockedVideoTracksHandler: (tracks: MediaStreamTrack[]) => MediaStreamTrack[]
+    mockedVideoTracksHandler: (
+      tracks: MediaStreamTrack[],
+    ) => MediaStreamTrack[],
   ): typeof MediaMock {
     this.mockedVideoTracksHandler = mockedVideoTracksHandler;
     return this;
@@ -323,7 +331,7 @@ export class MediaMockClass {
    */
   public mock(
     device: DeviceConfig,
-    options: MockOptions = createDefaultMockOptions()
+    options: MockOptions = createDefaultMockOptions(),
   ): typeof MediaMock {
     this.settings.device = device;
 
@@ -336,7 +344,8 @@ export class MediaMockClass {
       const unmockGetUserMedia = defineProperty(
         navigator.mediaDevices,
         "getUserMedia",
-        (constraints: MediaStreamConstraints) => this.getMockStream(constraints)
+        (constraints: MediaStreamConstraints) =>
+          this.getMockStream(constraints),
       );
       this.mapUnmockFunction.set("getUserMedia", unmockGetUserMedia);
     }
@@ -347,11 +356,11 @@ export class MediaMockClass {
         "getSupportedConstraints",
         () => {
           return this.settings.constraints;
-        }
+        },
       );
       this.mapUnmockFunction.set(
         "getSupportedConstraints",
-        unmockGetSupportedConstraints
+        unmockGetSupportedConstraints,
       );
     }
 
@@ -359,7 +368,7 @@ export class MediaMockClass {
       const unmockEnumerateDevices = defineProperty(
         navigator.mediaDevices,
         "enumerateDevices",
-        async () => this.settings.device.mediaDeviceInfo
+        async () => this.settings.device.mediaDeviceInfo,
       );
       this.mapUnmockFunction.set("enumerateDevices", unmockEnumerateDevices);
     }
@@ -405,26 +414,23 @@ export class MediaMockClass {
   }
 
   private async getMockStream(
-    constraints: MediaStreamConstraints
+    constraints: MediaStreamConstraints,
   ): Promise<MediaStream> {
-    this.resolution = this.getResolution(
-      constraints,
-      this.settings.device
-    );
+    this.resolution = this.getResolution(constraints, this.settings.device);
 
     this.fps = this.getFPSFromConstraints(constraints);
 
     this.canvas = document.createElement("canvas");
     this.canvas.id = this.mediaMockCanvasId;
-    
+
     const { width, height } = this.resolution;
-    
+
     this.canvas.width = width;
     this.canvas.height = height;
-    
+
     this.ctx = this.canvas.getContext("2d")!;
-    
-    this.ctx.fillStyle = '#ffffff';
+
+    this.ctx.fillStyle = "#ffffff";
     this.ctx.fillRect(0, 0, width, height);
 
     await this.startIntervalDrawing();
@@ -435,11 +441,9 @@ export class MediaMockClass {
 
     // For the captureStream, we use the fps parameter directly
     const canvasStream = this.canvas.captureStream(this.fps);
-    
+
     this.currentStream = new MediaStream(
-      this.mockedVideoTracksHandler(
-        canvasStream?.getVideoTracks() ?? []
-      )
+      this.mockedVideoTracksHandler(canvasStream?.getVideoTracks() ?? []),
     );
 
     return this.currentStream;
@@ -462,41 +466,47 @@ export class MediaMockClass {
    */
   private getResolution(
     constraints: MediaStreamConstraints,
-    deviceConfig: DeviceConfig
+    deviceConfig: DeviceConfig,
   ): { width: number; height: number } {
     const isPortrait = window.innerHeight > window.innerWidth;
-    const videoConstraints = constraints.video as MediaTrackConstraints || {};
-    
+    const videoConstraints = (constraints.video as MediaTrackConstraints) || {};
+
     // Extract ideal dimensions from constraints
-    const targetWidth = this.extractConstraintValue(videoConstraints.width, 640);
-    const targetHeight = this.extractConstraintValue(videoConstraints.height, 480);
-    
+    const targetWidth = this.extractConstraintValue(
+      videoConstraints.width,
+      640,
+    );
+    const targetHeight = this.extractConstraintValue(
+      videoConstraints.height,
+      480,
+    );
+
     // Try exact match first
     let matchedResolution = this.findExactMatch(
       deviceConfig.videoResolutions,
       targetWidth,
       targetHeight,
-      isPortrait
+      isPortrait,
     );
-    
+
     // If no exact match, find best fit by aspect ratio
     if (!matchedResolution) {
       matchedResolution = this.findBestFitResolution(
         deviceConfig.videoResolutions,
         targetWidth,
         targetHeight,
-        isPortrait
+        isPortrait,
       );
     }
-    
+
     // Final fallback
     if (!matchedResolution) {
       matchedResolution = this.getFallbackResolution(
         deviceConfig.videoResolutions,
-        isPortrait
+        isPortrait,
       );
     }
-    
+
     return matchedResolution;
   }
 
@@ -505,13 +515,15 @@ export class MediaMockClass {
    */
   private extractConstraintValue(
     constraint: number | ConstrainULong | undefined,
-    defaultValue: number
+    defaultValue: number,
   ): number {
-    if (typeof constraint === 'number') {
+    if (typeof constraint === "number") {
       return constraint;
     }
-    if (constraint && typeof constraint === 'object') {
-      return constraint.ideal ?? constraint.exact ?? constraint.max ?? defaultValue;
+    if (constraint && typeof constraint === "object") {
+      return (
+        constraint.ideal ?? constraint.exact ?? constraint.max ?? defaultValue
+      );
     }
     return defaultValue;
   }
@@ -523,13 +535,13 @@ export class MediaMockClass {
     resolutions: { width: number; height: number }[],
     targetWidth: number,
     targetHeight: number,
-    isPortrait: boolean
+    isPortrait: boolean,
   ): { width: number; height: number } | undefined {
     // Try direct match first
     const directMatch = resolutions.find(
-      res => res.width === targetWidth && res.height === targetHeight
+      (res) => res.width === targetWidth && res.height === targetHeight,
     );
-    
+
     if (directMatch) {
       // If we have direct match but in portrait mode and it's landscape resolution, swap it
       if (isPortrait && directMatch.width > directMatch.height) {
@@ -537,18 +549,18 @@ export class MediaMockClass {
       }
       return directMatch;
     }
-    
+
     // If portrait mode, try to find a landscape resolution that can be swapped
     if (isPortrait) {
       const landscapeToSwap = resolutions.find(
-        res => res.width === targetHeight && res.height === targetWidth
+        (res) => res.width === targetHeight && res.height === targetWidth,
       );
-      
+
       if (landscapeToSwap) {
         return { width: landscapeToSwap.height, height: landscapeToSwap.width };
       }
     }
-    
+
     return undefined;
   }
 
@@ -559,32 +571,33 @@ export class MediaMockClass {
     resolutions: { width: number; height: number }[],
     targetWidth: number,
     targetHeight: number,
-    isPortrait: boolean
+    isPortrait: boolean,
   ): { width: number; height: number } {
     const targetAspectRatio = targetWidth / targetHeight;
     const targetPixels = targetWidth * targetHeight;
-    
+
     // Score each resolution
-    const scoredResolutions = resolutions.map(res => {
-      const actualRes = isPortrait && res.width > res.height 
-        ? { width: res.height, height: res.width } // Swap if needed for portrait
-        : res;
-      
+    const scoredResolutions = resolutions.map((res) => {
+      const actualRes =
+        isPortrait && res.width > res.height
+          ? { width: res.height, height: res.width } // Swap if needed for portrait
+          : res;
+
       const aspectRatio = actualRes.width / actualRes.height;
       const pixels = actualRes.width * actualRes.height;
-      
+
       // Calculate aspect ratio difference (lower is better)
       const aspectDiff = Math.abs(aspectRatio - targetAspectRatio);
-      
+
       // Calculate size difference (prefer closest to target)
       const sizeDiff = Math.abs(pixels - targetPixels) / targetPixels;
-      
+
       // Combined score (lower is better)
       const score = aspectDiff * 2 + sizeDiff;
-      
+
       return { resolution: actualRes, score };
     });
-    
+
     // Return resolution with lowest score
     scoredResolutions.sort((a, b) => a.score - b.score);
     return scoredResolutions[0].resolution;
@@ -595,24 +608,24 @@ export class MediaMockClass {
    */
   private getFallbackResolution(
     resolutions: { width: number; height: number }[],
-    isPortrait: boolean
+    isPortrait: boolean,
   ): { width: number; height: number } {
     if (resolutions.length === 0) {
       return { width: 640, height: 480 }; // Ultimate fallback
     }
-    
+
     if (isPortrait) {
       // Prefer portrait resolutions, or swap landscape ones
-      const portraitRes = resolutions.find(res => res.height > res.width);
+      const portraitRes = resolutions.find((res) => res.height > res.width);
       if (portraitRes) return portraitRes;
-      
+
       // Swap first landscape resolution
       const firstRes = resolutions[0];
       return { width: firstRes.height, height: firstRes.width };
     }
-    
+
     // For landscape, prefer landscape resolutions
-    const landscapeRes = resolutions.find(res => res.width >= res.height);
+    const landscapeRes = resolutions.find((res) => res.width >= res.height);
     return landscapeRes || resolutions[0];
   }
 }

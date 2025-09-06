@@ -42,9 +42,8 @@ export interface DeviceConfig {
 
 type DeviceName = "iPhone 12" | "Samsung Galaxy M53" | "Mac Desktop";
 
-
 /**
- * A list of devices to mock. For now we have 
+ * A list of devices to mock. For now we have
  * - iPhone 12
  * - Samsung Galaxy M53
  * - Mac Desktop
@@ -57,7 +56,7 @@ export const devices: Record<DeviceName, DeviceConfig> = {
       { width: 1920, height: 1080 },
       { width: 1280, height: 720 },
       { width: 640, height: 480 },
-      { width: 320, height: 240 }
+      { width: 320, height: 240 },
     ],
     mediaDeviceInfo: [
       createMediaDeviceInfo({
@@ -141,7 +140,7 @@ export const devices: Record<DeviceName, DeviceConfig> = {
     videoResolutions: [
       { width: 1920, height: 1080 },
       { width: 1280, height: 720 },
-      { width: 640, height: 480 }
+      { width: 640, height: 480 },
     ],
     mediaDeviceInfo: [
       createMediaDeviceInfo({

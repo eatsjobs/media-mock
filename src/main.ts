@@ -1,4 +1,4 @@
-import { MediaMock, devices } from "../lib/main.ts";
+import { devices, MediaMock } from "../lib/main.ts";
 
 async function startStream() {
   const videoElement = document.querySelector<HTMLVideoElement>("video");
@@ -32,7 +32,10 @@ async function startStream() {
 
     const constraints = navigator.mediaDevices.getSupportedConstraints();
     console.log("constraints:", constraints);
-    console.log("mocked capabilities:", stream.getVideoTracks()[0].getCapabilities());
+    console.log(
+      "mocked capabilities:",
+      stream.getVideoTracks()[0].getCapabilities(),
+    );
   } catch (error) {
     console.error("Error accessing media devices.", error);
   }

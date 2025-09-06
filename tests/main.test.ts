@@ -34,7 +34,7 @@ describe("MediaMock", () => {
 
     expect(constraints).toBeDefined();
     expect(constraints).toStrictEqual(
-      devices["iPhone 12"].supportedConstraints
+      devices["iPhone 12"].supportedConstraints,
     );
   });
 
@@ -80,7 +80,7 @@ describe("MediaMock", () => {
           height: { ideal: 1080 },
         },
       },
-      devices["iPhone 12"]
+      devices["iPhone 12"],
     );
 
     expect(resolution).toEqual({ width: 1080, height: 1920 });
@@ -160,7 +160,7 @@ describe("MediaMock", () => {
         groupId: "3d",
         kind: "videoinput",
         label: "New USB Camera",
-      })
+      }),
     );
   });
 
@@ -183,24 +183,24 @@ describe("MediaMock", () => {
   it("should allow changing media URL after stream is created", async () => {
     const initialImageUrl = "/assets/ean8_12345670.png";
     const newMediaUrl = "/assets/hd_1280_720_25fps.mp4";
-    
+
     // Setup mock with initial image
     MediaMock.setMediaURL(initialImageUrl).mock(devices["iPhone 12"]);
-    
+
     // Request a stream
     const stream = await navigator.mediaDevices.getUserMedia({ video: true });
     expect(stream).toBeDefined();
     expect(MediaMock["settings"].mediaURL).toBe(initialImageUrl);
-    
+
     // Change the media URL while stream is active
     MediaMock.setMediaURL(newMediaUrl);
-    
+
     // Verify the URL was changed in settings
     expect(MediaMock["settings"].mediaURL).toBe(newMediaUrl);
-    
+
     // Give time for the interval to update with new image
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
     // Stream should still be active
     expect(stream.active).toBe(true);
     expect(stream.getVideoTracks()[0].readyState).toBe("live");
@@ -208,13 +208,13 @@ describe("MediaMock", () => {
 
   it("should apply canvas scale factor correctly", () => {
     const scaleFactor = 0.8;
-    
+
     MediaMock.setCanvasScaleFactor(scaleFactor);
     expect(MediaMock["settings"].canvasScaleFactor).toBe(scaleFactor);
-    
+
     MediaMock.setCanvasScaleFactor(1.5);
     expect(MediaMock["settings"].canvasScaleFactor).toBe(1.5);
-    
+
     MediaMock.setCanvasScaleFactor(0.05);
     expect(MediaMock["settings"].canvasScaleFactor).toBe(0.1);
   });
@@ -235,7 +235,7 @@ describe("MediaMock", () => {
     expect(stream.getVideoTracks()[0].getCapabilities()).toEqual(
       expect.objectContaining({
         whatever: 1,
-      })
+      }),
     );
   });
 });
