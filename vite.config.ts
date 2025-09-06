@@ -1,8 +1,8 @@
-import { defineConfig } from "vitest/config";
-import dts from "vite-plugin-dts";
+import fs from "node:fs/promises";
+import path from "node:path";
 import { codecovVitePlugin } from "@codecov/vite-plugin";
-import fs from "fs/promises";
-import path from "path";
+import dts from "vite-plugin-dts";
+import { defineConfig } from "vitest/config";
 
 // Plugin to duplicate .d.ts to .d.cts
 function duplicateDTSPlugin() {

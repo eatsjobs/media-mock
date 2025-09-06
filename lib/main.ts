@@ -1,6 +1,6 @@
-import { MockMediaDeviceInfo } from "./createMediaDeviceInfo";
+import type { MockMediaDeviceInfo } from "./createMediaDeviceInfo";
 import { defineProperty } from "./defineProperty";
-import { DeviceConfig, devices } from "./devices";
+import { type DeviceConfig, devices } from "./devices";
 import { loadImage } from "./loadImage";
 
 export interface MockOptions {
@@ -196,7 +196,7 @@ export class MediaMockClass {
 
       if (this.debug) {
         console.log(`
-          Canvas: ${width}x${height}, 
+          Canvas: ${width}x${height},
           Image: ${this.currentImage?.naturalWidth}x${this.currentImage?.naturalHeight}`);
       }
 
@@ -209,7 +209,10 @@ export class MediaMockClass {
         const imageAspect = naturalWidth / naturalHeight;
         const canvasAspect = width / height;
 
-        let scaledWidth, scaledHeight, offsetX, offsetY;
+        let scaledWidth: number,
+          scaledHeight: number,
+          offsetX: number,
+          offsetY: number;
 
         const safetyFactor = this.settings.canvasScaleFactor;
 
@@ -385,7 +388,9 @@ export class MediaMockClass {
   public unmock(): typeof MediaMock {
     this.stopMockStream();
     this.disableDebugMode();
-    this.mapUnmockFunction.forEach((unmock) => unmock());
+    this.mapUnmockFunction.forEach((unmock) => {
+      unmock();
+    });
     this.mapUnmockFunction.clear();
 
     return this;
@@ -395,7 +400,9 @@ export class MediaMockClass {
     if (this.intervalId) {
       clearInterval(this.intervalId);
     }
-    this.currentStream?.getVideoTracks()?.forEach((track) => track.stop());
+    this.currentStream?.getVideoTracks()?.forEach((track) => {
+      track.stop();
+    });
     this.currentStream?.stop?.(); // Stop the stream if needed
   }
 

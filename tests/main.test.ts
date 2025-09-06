@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { MediaMock, createMediaDeviceInfo, devices } from "../lib/main";
+import { createMediaDeviceInfo, devices, MediaMock } from "../lib/main";
 
 describe("MediaMock", () => {
   const imageUrl = "/assets/ean8_12345670.png";

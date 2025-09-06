@@ -1,6 +1,6 @@
 import {
   createMediaDeviceInfo,
-  MockMediaDeviceInfo,
+  type MockMediaDeviceInfo,
 } from "./createMediaDeviceInfo";
 
 const defaultSupportedConstraints: Record<
