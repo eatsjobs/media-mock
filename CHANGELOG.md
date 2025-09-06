@@ -1,5 +1,11 @@
 # @eatsjobs/media-mock
 
+## 1.0.1
+
+### Patch Changes
+
+- 96a36c2: Update documentation for v1
+
 ## 1.0.0
 
 ### Major Changes
