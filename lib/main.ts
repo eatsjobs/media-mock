@@ -455,7 +455,7 @@ export class MediaMockClass {
   }
 
   /**
-   * Get the appropriate resolution based on device orientation
+   * Get the appropriate resolution based on device orientation and constraints
    * @param constraints Media constraints
    * @param deviceConfig Device configuration
    * @returns Resolution object with width and height
@@ -463,86 +463,157 @@ export class MediaMockClass {
   private getResolution(
     constraints: MediaStreamConstraints,
     deviceConfig: DeviceConfig
-  ) {
-    // First check if we're in portrait or landscape mode
+  ): { width: number; height: number } {
     const isPortrait = window.innerHeight > window.innerWidth;
+    const videoConstraints = constraints.video as MediaTrackConstraints || {};
     
-    // Get target dimensions from constraints
-    const targetWidth = (constraints.video as MediaTrackConstraints).width || {
-      ideal: 640,
-    };
-    const targetHeight = (constraints.video as MediaTrackConstraints).height || { 
-      ideal: 480 
-    };
+    // Extract ideal dimensions from constraints
+    const targetWidth = this.extractConstraintValue(videoConstraints.width, 640);
+    const targetHeight = this.extractConstraintValue(videoConstraints.height, 480);
+    
+    // Try exact match first
+    let matchedResolution = this.findExactMatch(
+      deviceConfig.videoResolutions,
+      targetWidth,
+      targetHeight,
+      isPortrait
+    );
+    
+    // If no exact match, find best fit by aspect ratio
+    if (!matchedResolution) {
+      matchedResolution = this.findBestFitResolution(
+        deviceConfig.videoResolutions,
+        targetWidth,
+        targetHeight,
+        isPortrait
+      );
+    }
+    
+    // Final fallback
+    if (!matchedResolution) {
+      matchedResolution = this.getFallbackResolution(
+        deviceConfig.videoResolutions,
+        isPortrait
+      );
+    }
+    
+    return matchedResolution;
+  }
 
-    // Find matching resolution based on orientation
-    let matchedResolution;
+  /**
+   * Extract numeric value from constraint (handles number, object with ideal/exact, etc.)
+   */
+  private extractConstraintValue(
+    constraint: number | ConstrainULong | undefined,
+    defaultValue: number
+  ): number {
+    if (typeof constraint === 'number') {
+      return constraint;
+    }
+    if (constraint && typeof constraint === 'object') {
+      return constraint.ideal ?? constraint.exact ?? constraint.max ?? defaultValue;
+    }
+    return defaultValue;
+  }
+
+  /**
+   * Find exact resolution match considering orientation
+   */
+  private findExactMatch(
+    resolutions: { width: number; height: number }[],
+    targetWidth: number,
+    targetHeight: number,
+    isPortrait: boolean
+  ): { width: number; height: number } | undefined {
+    // Try direct match first
+    const directMatch = resolutions.find(
+      res => res.width === targetWidth && res.height === targetHeight
+    );
     
+    if (directMatch) {
+      // If we have direct match but in portrait mode and it's landscape resolution, swap it
+      if (isPortrait && directMatch.width > directMatch.height) {
+        return { width: directMatch.height, height: directMatch.width };
+      }
+      return directMatch;
+    }
+    
+    // If portrait mode, try to find a landscape resolution that can be swapped
     if (isPortrait) {
-      // In portrait mode, look for taller resolutions or swap dimensions
-      matchedResolution = deviceConfig.videoResolutions.find(
-        (res) => 
-          res.height > res.width && // Find portrait-oriented resolutions first
-          (typeof targetHeight === "number"
-            ? res.height === targetHeight
-            : res.height === targetHeight.ideal) &&
-          (typeof targetWidth === "number"
-            ? res.width === targetWidth
-            : res.width === targetWidth.ideal)
+      const landscapeToSwap = resolutions.find(
+        res => res.width === targetHeight && res.height === targetWidth
       );
       
-      // If no portrait resolution found, try to find a landscape one to swap
-      if (!matchedResolution) {
-        const landscapeRes = deviceConfig.videoResolutions.find(
-          (res) =>
-            (typeof targetWidth === "number"
-              ? res.height === targetWidth  // Note: swapped dimensions
-              : res.height === targetWidth.ideal) &&
-            (typeof targetHeight === "number"
-              ? res.width === targetHeight  // Note: swapped dimensions
-              : res.width === targetHeight.ideal)
-        );
-        
-        // If found, swap dimensions
-        if (landscapeRes) {
-          matchedResolution = {
-            width: landscapeRes.height,
-            height: landscapeRes.width
-          };
-        }
-      }
-    } else {
-      // Standard landscape matching
-      matchedResolution = deviceConfig.videoResolutions.find(
-        (res) =>
-          (typeof targetWidth === "number"
-            ? res.width === targetWidth
-            : res.width === targetWidth.ideal) &&
-          (typeof targetHeight === "number"
-            ? res.height === targetHeight
-            : res.height === targetHeight.ideal)
-      );
-    }
-    
-    // If still no match, use most appropriate resolution based on orientation
-    if (!matchedResolution) {
-      if (isPortrait) {
-        // Find the first portrait resolution or create one by swapping
-        matchedResolution = deviceConfig.videoResolutions.find(res => res.height > res.width);
-        
-        if (!matchedResolution && deviceConfig.videoResolutions.length > 0) {
-          // If no portrait resolutions, take first landscape and swap
-          const firstRes = deviceConfig.videoResolutions[0];
-          matchedResolution = {
-            width: firstRes.height,
-            height: firstRes.width
-          };
-        }
+      if (landscapeToSwap) {
+        return { width: landscapeToSwap.height, height: landscapeToSwap.width };
       }
     }
     
-    // Final fallback to first resolution
-    return matchedResolution || deviceConfig.videoResolutions[0];
+    return undefined;
+  }
+
+  /**
+   * Find best resolution match by aspect ratio and size preference
+   */
+  private findBestFitResolution(
+    resolutions: { width: number; height: number }[],
+    targetWidth: number,
+    targetHeight: number,
+    isPortrait: boolean
+  ): { width: number; height: number } {
+    const targetAspectRatio = targetWidth / targetHeight;
+    const targetPixels = targetWidth * targetHeight;
+    
+    // Score each resolution
+    const scoredResolutions = resolutions.map(res => {
+      const actualRes = isPortrait && res.width > res.height 
+        ? { width: res.height, height: res.width } // Swap if needed for portrait
+        : res;
+      
+      const aspectRatio = actualRes.width / actualRes.height;
+      const pixels = actualRes.width * actualRes.height;
+      
+      // Calculate aspect ratio difference (lower is better)
+      const aspectDiff = Math.abs(aspectRatio - targetAspectRatio);
+      
+      // Calculate size difference (prefer closest to target)
+      const sizeDiff = Math.abs(pixels - targetPixels) / targetPixels;
+      
+      // Combined score (lower is better)
+      const score = aspectDiff * 2 + sizeDiff;
+      
+      return { resolution: actualRes, score };
+    });
+    
+    // Return resolution with lowest score
+    scoredResolutions.sort((a, b) => a.score - b.score);
+    return scoredResolutions[0].resolution;
+  }
+
+  /**
+   * Get fallback resolution based on orientation
+   */
+  private getFallbackResolution(
+    resolutions: { width: number; height: number }[],
+    isPortrait: boolean
+  ): { width: number; height: number } {
+    if (resolutions.length === 0) {
+      return { width: 640, height: 480 }; // Ultimate fallback
+    }
+    
+    if (isPortrait) {
+      // Prefer portrait resolutions, or swap landscape ones
+      const portraitRes = resolutions.find(res => res.height > res.width);
+      if (portraitRes) return portraitRes;
+      
+      // Swap first landscape resolution
+      const firstRes = resolutions[0];
+      return { width: firstRes.height, height: firstRes.width };
+    }
+    
+    // For landscape, prefer landscape resolutions
+    const landscapeRes = resolutions.find(res => res.width >= res.height);
+    return landscapeRes || resolutions[0];
   }
 }
 
