@@ -5,6 +5,6 @@ export async function loadImage(imageURL: string): Promise<HTMLImageElement> {
     await image.decode();
     return image;
   } catch (error: unknown) {
-    throw new Error(`Failed to load image: ${imageURL}`);
+    throw new Error(`Failed to load image: ${imageURL}. Details: ${error}`);
   }
 }
