@@ -1,5 +1,43 @@
 # @eatsjobs/media-mock
 
+## 1.0.0
+
+### Major Changes
+
+- # 1.0.0 Release Candidate
+
+  This major release includes several breaking changes and significant improvements:
+
+  ## 🚨 Breaking Changes
+
+  - **Async setMediaURL**: `setMediaURL()` is now async and returns `Promise<MediaMockClass>` instead of `MediaMockClass`. This removes method chaining capability but enables proper async media loading.
+
+  ## ✨ New Features
+
+  - **Enhanced Cross-browser Testing**: Added comprehensive testing across Chromium, Firefox, and WebKit with proper permission handling
+  - **Device-specific Capabilities**: MediaStreamTrack capabilities now use device-specific `mockCapabilities` from `createMediaDeviceInfo`
+  - **WebKit Compatibility**: Enhanced `defineProperty` utility with error handling for WebKit's stricter security policies
+
+  ## 🏗️ Build & Infrastructure
+
+  - **Selective Minification**: Only UMD bundles are minified, keeping ES and CJS versions readable for debugging
+  - **Clean Distribution**: Removed unnecessary test assets from build output (~1MB reduction)
+  - **Node.js 22 Support**: Updated `tsconfig.node.json` for Node.js 22 compatibility with ES2023 target
+  - **TypeScript Improvements**: Enhanced type safety and fixed all TypeScript errors in build configuration
+
+  ## 🧪 Testing Improvements
+
+  - **Multi-browser Support**: Tests now run on Chromium, Firefox, and WebKit with consistent behavior
+  - **Realistic Device Emulation**: Tests use browser-specific device combinations (iOS Safari + iPhone 12, Android browsers + Samsung Galaxy M53)
+  - **Enhanced Cleanup**: Added proper test cleanup to prevent hanging processes
+
+  ## 📦 Package Improvements
+
+  - **Proper Exports**: Updated package.json exports for maximum compatibility across module systems
+  - **Optimized Bundle**: Clean build output with correct file references and no unnecessary assets
+
+  All tests pass across all supported browsers. This release represents a major stability and compatibility milestone for the library.
+
 ## 0.8.1
 
 ### Patch Changes
