@@ -1,0 +1,29 @@
+{
+  "name": "media-mock-extension",
+  "description": "Chrome/Safari extension for MediaMock library",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "wxt build",
+    "build:firefox": "wxt build -b firefox",
+    "build:safari": "wxt build -b safari",
+    "dev": "wxt",
+    "dev:firefox": "wxt -b firefox",
+    "dev:safari": "wxt -b safari",
+    "postbuild": "wxt zip",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@eatsjobs/media-mock": "npm:@jsr/eatsjobs__media-mock@^1.0.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.1.6",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "typescript": "^5.7.0",
+    "wxt": "~0.20.11"
+  }
+}

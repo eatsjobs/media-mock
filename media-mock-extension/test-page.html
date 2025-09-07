@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MediaMock Test Page</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .container {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        #output {
+            background: #ffffff;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 15px;
+            margin: 10px 0;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-weight: 500;
+        }
+        .status.success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .status.error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .status.info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+    </style>
+</head>
+<body>
+    <h1>MediaMock Extension Test Page</h1>
+    
+    <div class="container">
+        <h2>Test MediaDevices API</h2>
+        <p>Use this page to test if the MediaMock extension is working properly.</p>
+        
+        <button onclick="testEnumerateDevices()">Test Enumerate Devices</button>
+        <button onclick="testGetUserMedia()">Test Get User Media</button>
+        <button onclick="clearOutput()">Clear Output</button>
+        
+        <div id="status" class="status info">
+            Extension Status: <span id="extension-status">Checking...</span>
+        </div>
+        
+        <h3>Output:</h3>
+        <div id="output"></div>
+    </div>
+
+    <script>
+        function log(message) {
+            const output = document.getElementById('output');
+            const timestamp = new Date().toLocaleTimeString();
+            output.textContent += `[${timestamp}] ${message}\n`;
+            output.scrollTop = output.scrollHeight;
+        }
+
+        function clearOutput() {
+            document.getElementById('output').textContent = '';
+        }
+
+        function updateStatus(message, type = 'info') {
+            const status = document.getElementById('status');
+            const statusText = document.getElementById('extension-status');
+            statusText.textContent = message;
+            status.className = `status ${type}`;
+        }
+
+        async function testEnumerateDevices() {
+            log('Testing navigator.mediaDevices.enumerateDevices()...');
+            
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                log(`Found ${devices.length} devices:`);
+                
+                devices.forEach((device, index) => {
+                    log(`  [${index}] ${device.kind}: ${device.label || 'No label'} (${device.deviceId})`);
+                });
+                
+                // Check if these look like mocked devices
+                const videoInputs = devices.filter(d => d.kind === 'videoinput');
+                const isMocked = videoInputs.some(device => 
+                    device.label.includes('iPhone') || 
+                    device.label.includes('Samsung') || 
+                    device.label.includes('Mac Desktop')
+                );
+                
+                if (isMocked) {
+                    log('✅ Devices appear to be mocked by MediaMock extension!');
+                    updateStatus('MediaMock is active', 'success');
+                } else {
+                    log('⚠️  Devices appear to be real browser devices - MediaMock may not be active');
+                    updateStatus('MediaMock may not be active', 'error');
+                }
+                
+            } catch (error) {
+                log(`❌ Error: ${error.message}`);
+                updateStatus('Error testing devices', 'error');
+            }
+        }
+
+        async function testGetUserMedia() {
+            log('Testing navigator.mediaDevices.getUserMedia()...');
+            
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: 640, height: 480 }
+                });
+                
+                log('✅ getUserMedia successful!');
+                log(`Stream details:`);
+                log(`  - Active: ${stream.active}`);
+                log(`  - ID: ${stream.id}`);
+                log(`  - Tracks: ${stream.getTracks().length}`);
+                
+                stream.getTracks().forEach((track, index) => {
+                    const settings = track.getSettings();
+                    log(`  Track ${index}: ${track.kind}`);
+                    log(`    - Label: ${track.label}`);
+                    log(`    - Ready State: ${track.readyState}`);
+                    if (settings.width && settings.height) {
+                        log(`    - Resolution: ${settings.width}x${settings.height}`);
+                    }
+                });
+                
+                // Stop the stream
+                stream.getTracks().forEach(track => track.stop());
+                log('Stream stopped');
+                
+            } catch (error) {
+                log(`❌ Error: ${error.message}`);
+            }
+        }
+
+        // Check if MediaMock extension is loaded
+        function checkExtensionStatus() {
+            if (window.MediaMockExtensionLoaded) {
+                updateStatus('Extension loaded', 'success');
+                log('✅ MediaMock extension detected');
+            } else {
+                updateStatus('Extension not detected', 'error');
+                log('❌ MediaMock extension not detected');
+            }
+        }
+
+        // Check MediaMock availability in page context
+        function checkMediaMockAvailability() {
+            if (window.MediaMock) {
+                log('✅ MediaMock is available in page context');
+                log(`Available devices: ${Object.keys(window.MediaMockDevices || {}).join(', ')}`);
+            } else {
+                log('❌ MediaMock is not available in page context');
+            }
+        }
+
+        // Initial checks
+        log('MediaMock Extension Test Page loaded');
+        checkExtensionStatus();
+        
+        // Wait a bit for injection to complete
+        setTimeout(() => {
+            checkMediaMockAvailability();
+        }, 1000);
+        
+        // Listen for MediaMock events
+        window.addEventListener('mediamock:started', (event) => {
+            log(`🚀 MediaMock started: ${JSON.stringify(event.detail)}`);
+            updateStatus('MediaMock active', 'success');
+        });
+        
+        window.addEventListener('mediamock:stopped', () => {
+            log('⏹️  MediaMock stopped');
+            updateStatus('MediaMock stopped', 'info');
+        });
+    </script>
+</body>
+</html>
