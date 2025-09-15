@@ -2,6 +2,8 @@
 
 Media-Mock is a JavaScript library that simulates media devices (like webcams) in web applications, allowing developers to test and debug media constraints, device configurations, and stream functionality without needing physical devices. This is particularly useful in scenarios where hardware or user permissions aren't available or desired, such as in automated testing environments.
 
+Can also be used as browser extension please have a look at this repo [https://github.com/eatsjobs/media-mock-extension](https://github.com/eatsjobs/media-mock-extension)
+
 ---
 
 ![npm version](https://img.shields.io/npm/v/@eatsjobs/media-mock)

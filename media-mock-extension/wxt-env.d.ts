@@ -1,1 +1,0 @@
-/// <reference types="wxt/client-types" />
