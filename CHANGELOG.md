@@ -1,5 +1,11 @@
 # @eatsjobs/media-mock
 
+## 1.0.2
+
+### Patch Changes
+
+- 603f515: don't use an url as default media url. this open the usage for jsdom test environments. upgrade linter, sync claude.md
+
 ## 1.0.1
 
 ### Patch Changes
