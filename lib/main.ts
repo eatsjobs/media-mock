@@ -114,7 +114,8 @@ function playVideo(videoElement: HTMLVideoElement) {
  */
 export class MediaMockClass {
   public settings: Settings = {
-    mediaURL: "./assets/640x480-sample.png",
+    mediaURL:
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/w8AAgMBgQn2nAAAAABJRU5ErkJggg==",
     device: devices["iPhone 12"],
     constraints: devices["iPhone 12"].supportedConstraints,
     canvasScaleFactor: 1,
@@ -227,6 +228,7 @@ export class MediaMockClass {
         this.ctx.fillStyle = "#ffffff";
         this.ctx.fillRect(0, 0, width, height);
 
+        // biome-ignore lint/style/noNonNullAssertion: pretty sure this.currentImage is not null cause we just loaded it
         const { naturalWidth, naturalHeight } = this.currentImage!;
         const imageAspect = naturalWidth / naturalHeight;
         const canvasAspect = width / height;
@@ -482,7 +484,7 @@ export class MediaMockClass {
           (device) => device.kind === "videoinput",
         );
 
-        if (videoDevice && videoDevice.getCapabilities) {
+        if (videoDevice?.getCapabilities) {
           // Use the device-specific capabilities from mockCapabilities
           track.getCapabilities = () => videoDevice.getCapabilities();
         } else {
