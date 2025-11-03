@@ -42,6 +42,13 @@ export interface Settings {
    * @type {number}
    */
   canvasScaleFactor: number;
+
+  /**
+   * Timeout for media loading (image and video) in milliseconds
+   * @type {number}
+   * @default 60000 (60 seconds)
+   */
+  mediaTimeout: number;
 }
 
 function isVideoURL(url: string) {
@@ -66,52 +73,104 @@ function isVideoURL(url: string) {
   return videoExtensions.includes(extension ?? "");
 }
 
-function playVideo(videoElement: HTMLVideoElement) {
+/**
+ * Check if RequestAnimationFrame is supported
+ */
+function isRAFSupported(): boolean {
+  return typeof requestAnimationFrame === "function";
+}
+
+function playVideo(
+  videoElement: HTMLVideoElement,
+  timeoutMs: number = 60 * 1000,
+) {
   return new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      reject(new Error("Video loading timed out after 60 seconds"));
-    }, 60 * 1000);
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let isPromiseSettled = false;
 
-    videoElement.addEventListener(
-      "loadeddata",
-      async () => {
-        clearTimeout(timeout);
-        try {
-          await videoElement.play();
-          resolve();
-        } catch (e: unknown) {
-          console.error("Video play failed:", e);
-          resolve(); // Continue anyway for testing
-        }
-      },
-      { once: true },
-    );
+    /**
+     * Cleanup function to remove all event listeners and timeout
+     */
+    const cleanup = () => {
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      videoElement.removeEventListener("loadeddata", onLoadedData);
+      videoElement.removeEventListener("error", onError);
+    };
 
-    videoElement.addEventListener(
-      "error",
-      (event) => {
-        clearTimeout(timeout);
-        console.error(
-          "Failed to load video source. Ensure the format is supported and the URL is valid.",
-        );
-        console.error("Video error details:", {
-          error: event.error,
-          target: event.target,
-          networkState: videoElement.networkState,
-          readyState: videoElement.readyState,
-          currentSrc: videoElement.currentSrc,
-        });
-        reject(new Error(`Video failed to load: ${videoElement.src}`));
-      },
-      { once: true },
-    );
+    /**
+     * Handle successful video loading
+     */
+    const onLoadedData = async () => {
+      if (isPromiseSettled) return;
+      isPromiseSettled = true;
 
+      cleanup();
+
+      try {
+        await videoElement.play();
+        resolve();
+      } catch (e: unknown) {
+        // Note: Autoplay may be blocked by browser, but video is still loaded
+        // Log as warning, not error, and continue for testing purposes
+        console.warn("Video autoplay failed (may be blocked by browser):", e);
+        resolve(); // Continue anyway for testing - video is loaded even if autoplay blocked
+      }
+    };
+
+    /**
+     * Handle video loading errors
+     */
+    const onError = () => {
+      if (isPromiseSettled) return;
+      isPromiseSettled = true;
+
+      cleanup();
+
+      console.error(
+        "Failed to load video source. Ensure the format is supported and the URL is valid.",
+      );
+      console.error("Video error details:", {
+        error: videoElement.error?.message,
+        target: videoElement,
+        networkState: videoElement.networkState,
+        readyState: videoElement.readyState,
+        currentSrc: videoElement.currentSrc,
+      });
+      reject(new Error(`Video failed to load: ${videoElement.src}`));
+    };
+
+    /**
+     * Handle timeout
+     */
+    const onTimeout = () => {
+      if (isPromiseSettled) return;
+      isPromiseSettled = true;
+
+      cleanup();
+
+      reject(
+        new Error(`Video loading timed out after ${timeoutMs / 1000} seconds`),
+      );
+    };
+
+    // Set up timeout
+    timeoutId = setTimeout(onTimeout, timeoutMs);
+
+    // Add event listeners
+    videoElement.addEventListener("loadeddata", onLoadedData, { once: true });
+    videoElement.addEventListener("error", onError, { once: true });
+
+    // Start loading
     videoElement.load();
   });
 }
 
 async function loadMedia(
   mediaURL: string,
+  timeoutMs: number = 60 * 1000,
 ): Promise<HTMLImageElement | HTMLVideoElement> {
   if (isVideoURL(mediaURL)) {
     const video = document.createElement("video");
@@ -122,10 +181,10 @@ async function loadMedia(
     video.autoplay = true;
     video.hidden = true;
     video.crossOrigin = "anonymous";
-    await playVideo(video);
+    await playVideo(video, timeoutMs);
     return video;
   } else {
-    return await loadImage(mediaURL);
+    return await loadImage(mediaURL, timeoutMs);
   }
 }
 
@@ -156,6 +215,7 @@ export class MediaMockClass {
     device: devices["iPhone 12"],
     constraints: devices["iPhone 12"].supportedConstraints,
     canvasScaleFactor: 1,
+    mediaTimeout: 60 * 1000, // 60 seconds
   };
 
   private readonly mediaMockImageId = "media-mock-image";
@@ -177,9 +237,9 @@ export class MediaMockClass {
 
   private debug: boolean = false;
 
-  private canvas: HTMLCanvasElement | undefined;
+  private canvas: HTMLCanvasElement | undefined | null = undefined;
 
-  private ctx: CanvasRenderingContext2D | undefined;
+  private ctx: CanvasRenderingContext2D | null | undefined = undefined;
 
   private mockedVideoTracksHandler: (
     tracks: MediaStreamTrack[],
@@ -191,6 +251,9 @@ export class MediaMockClass {
     height: 480,
   };
 
+  private rafId: number | null = null;
+  private lastDrawTime: number = 0;
+
   /**
    * The Image or the video that will be used as source.
    * @public
@@ -198,27 +261,100 @@ export class MediaMockClass {
    * @returns {Promise<MediaMockClass>}
    */
   public async setMediaURL(mediaURL: string): Promise<MediaMockClass> {
-    // Load and validate the media before updating settings
-    await loadMedia(mediaURL);
+    // Validate input
+    if (!mediaURL || typeof mediaURL !== "string" || mediaURL.trim() === "") {
+      throw new Error("Invalid mediaURL: must be a non-empty string");
+    }
 
+    // Load and validate the NEW media before updating settings
+    const media = await loadMedia(mediaURL, this.settings.mediaTimeout);
+
+    // Update settings after successful load
     this.settings.mediaURL = mediaURL;
+
+    // Clean up old media and store new media
+    if (media instanceof HTMLImageElement) {
+      if (this.currentVideo) {
+        this.currentVideo.pause();
+        this.currentVideo.src = "";
+      }
+      this.currentImage = media;
+      this.currentVideo = undefined;
+    } else if (media instanceof HTMLVideoElement) {
+      if (this.currentImage) {
+        this.currentImage.src = "";
+      }
+      this.currentVideo = media;
+      this.currentImage = undefined;
+    }
+
+    // Restart drawing with new media if stream is active
     if (this.intervalId) {
-      await this.startIntervalDrawing();
+      await this.startDrawingLoop();
     }
     return this;
   }
 
-  private async startIntervalDrawing(): Promise<void> {
-    if (this.intervalId) {
-      clearInterval(this.intervalId);
-    }
+  private async startDrawingLoop(): Promise<void> {
+    // Stop any existing drawing loop
+    this.stopDrawingLoop();
 
     const { width, height } = this.resolution;
-    const media = await loadMedia(this.settings.mediaURL);
 
     if (isVideoURL(this.settings.mediaURL)) {
-      this.currentVideo = media as HTMLVideoElement;
+      if (!this.currentVideo) {
+        throw new Error("Video media not loaded");
+      }
 
+      this.startVideoDrawingLoop(width, height);
+    } else {
+      if (!this.currentImage) {
+        throw new Error("Image media not loaded");
+      }
+
+      if (this.debug) {
+        console.log(`
+          Canvas: ${width}x${height},
+          Image: ${this.currentImage.naturalWidth}x${this.currentImage.naturalHeight}`);
+      }
+
+      this.startImageDrawingLoop(width, height);
+    }
+  }
+
+  /**
+   * Start drawing loop for video using RequestAnimationFrame with FPS throttling
+   */
+  private startVideoDrawingLoop(width: number, height: number): void {
+    const frameInterval = 1000 / this.fps; // Time between frames in ms
+    this.lastDrawTime = performance.now();
+
+    const drawFrame = () => {
+      if (!this.ctx || !this.currentVideo) {
+        return;
+      }
+
+      const now = performance.now();
+
+      // Only draw if enough time has passed based on FPS
+      if (now - this.lastDrawTime >= frameInterval) {
+        this.ctx.clearRect(0, 0, width, height);
+        this.ctx.fillStyle = "#ffffff";
+        this.ctx.fillRect(0, 0, width, height);
+        this.ctx.drawImage(this.currentVideo, 0, 0, width, height);
+        this.lastDrawTime = now;
+      }
+
+      if (isRAFSupported()) {
+        this.rafId = requestAnimationFrame(drawFrame);
+      }
+    };
+
+    if (isRAFSupported()) {
+      // Use RequestAnimationFrame for better performance
+      this.rafId = requestAnimationFrame(drawFrame);
+    } else {
+      // Fallback to setInterval for browsers without RAF
       this.intervalId = setInterval(() => {
         if (!this.ctx || !this.currentVideo) {
           return;
@@ -227,60 +363,98 @@ export class MediaMockClass {
         this.ctx.fillStyle = "#ffffff";
         this.ctx.fillRect(0, 0, width, height);
         this.ctx.drawImage(this.currentVideo, 0, 0, width, height);
-      }, 1000 / this.fps);
-    } else {
-      this.currentImage = media as HTMLImageElement;
-      this.currentImage.id = this.mediaMockImageId;
+      }, frameInterval);
+    }
+  }
 
-      if (this.debug) {
-        console.log(`
-          Canvas: ${width}x${height},
-          Image: ${this.currentImage?.naturalWidth}x${this.currentImage?.naturalHeight}`);
+  /**
+   * Start drawing loop for image using RequestAnimationFrame
+   * For static images, draws once and then relies on canvas stream
+   */
+  private startImageDrawingLoop(width: number, height: number): void {
+    const drawImage = () => {
+      if (!this.ctx || !this.currentImage) {
+        return;
       }
 
-      this.intervalId = setInterval(() => {
-        if (!this.ctx) {
-          return;
-        }
-        this.ctx.clearRect(0, 0, width, height);
-        this.ctx.fillStyle = "#ffffff";
-        this.ctx.fillRect(0, 0, width, height);
+      this.currentImage.id = this.mediaMockImageId;
+      this.ctx.clearRect(0, 0, width, height);
+      this.ctx.fillStyle = "#ffffff";
+      this.ctx.fillRect(0, 0, width, height);
 
-        // biome-ignore lint/style/noNonNullAssertion: pretty sure this.currentImage is not null cause we just loaded it
-        const { naturalWidth, naturalHeight } = this.currentImage!;
-        const imageAspect = naturalWidth / naturalHeight;
-        const canvasAspect = width / height;
+      const { naturalWidth, naturalHeight } = this.currentImage;
 
-        let scaledWidth: number,
-          scaledHeight: number,
-          offsetX: number,
-          offsetY: number;
+      // Validate dimensions to prevent divide by zero
+      if (
+        naturalHeight === 0 ||
+        height === 0 ||
+        !Number.isFinite(naturalWidth / naturalHeight) ||
+        !Number.isFinite(width / height)
+      ) {
+        return; // Skip drawing if dimensions are invalid
+      }
 
-        const safetyFactor = this.settings.canvasScaleFactor;
+      const imageAspect = naturalWidth / naturalHeight;
+      const canvasAspect = width / height;
 
-        if (imageAspect > canvasAspect) {
-          // Image is wider (relative to height) than canvas
-          scaledWidth = width * safetyFactor;
-          scaledHeight = (width * safetyFactor) / imageAspect;
-          offsetX = (width - scaledWidth) / 2;
-          offsetY = (height - scaledHeight) / 2;
-        } else {
-          // Image is taller (relative to width) than canvas
-          scaledHeight = height * safetyFactor;
-          scaledWidth = height * safetyFactor * imageAspect;
-          offsetX = (width - scaledWidth) / 2;
-          offsetY = (height - scaledHeight) / 2;
-        }
+      let scaledWidth: number,
+        scaledHeight: number,
+        offsetX: number,
+        offsetY: number;
 
-        this.ctx.drawImage(
-          this.currentImage!,
-          offsetX,
-          offsetY,
-          scaledWidth,
-          scaledHeight,
-        );
-      }, 1000 / this.fps);
+      const safetyFactor = this.settings.canvasScaleFactor;
+
+      if (imageAspect > canvasAspect) {
+        // Image is wider (relative to height) than canvas
+        scaledWidth = width * safetyFactor;
+        scaledHeight = (width * safetyFactor) / imageAspect;
+        offsetX = (width - scaledWidth) / 2;
+        offsetY = (height - scaledHeight) / 2;
+      } else {
+        // Image is taller (relative to width) than canvas
+        scaledHeight = height * safetyFactor;
+        scaledWidth = height * safetyFactor * imageAspect;
+        offsetX = (width - scaledWidth) / 2;
+        offsetY = (height - scaledHeight) / 2;
+      }
+
+      this.ctx.drawImage(
+        this.currentImage,
+        offsetX,
+        offsetY,
+        scaledWidth,
+        scaledHeight,
+      );
+
+      // For images, schedule next draw with RequestAnimationFrame
+      if (isRAFSupported()) {
+        this.rafId = requestAnimationFrame(drawImage);
+      }
+    };
+
+    if (isRAFSupported()) {
+      // Use RequestAnimationFrame for images
+      this.rafId = requestAnimationFrame(drawImage);
+    } else {
+      // Fallback to setInterval for browsers without RAF
+      const frameInterval = 1000 / this.fps;
+      this.intervalId = setInterval(drawImage, frameInterval);
     }
+  }
+
+  /**
+   * Stop the drawing loop (either RAF or setInterval)
+   */
+  private stopDrawingLoop(): void {
+    if (this.rafId !== null) {
+      cancelAnimationFrame(this.rafId);
+      this.rafId = null;
+    }
+    if (this.intervalId !== null) {
+      clearInterval(this.intervalId);
+      this.intervalId = null;
+    }
+    this.lastDrawTime = 0;
   }
 
   /**
@@ -354,6 +528,17 @@ export class MediaMockClass {
 
     canvas?.remove();
     image?.remove();
+
+    // Also remove from stored references if they exist
+    if (this.currentImage && this.currentImage.parentNode) {
+      this.currentImage.style.border = "";
+      this.currentImage.remove();
+    }
+    if (this.canvas && this.canvas.parentNode) {
+      this.canvas.style.border = "";
+      this.canvas.remove();
+    }
+
     return this;
   }
 
@@ -439,18 +624,34 @@ export class MediaMockClass {
   }
 
   private stopMockStream(): void {
-    if (this.intervalId) {
-      clearInterval(this.intervalId);
-    }
+    // Stop the drawing loop (cancels RAF or clears interval)
+    this.stopDrawingLoop();
+
     this.currentStream?.getVideoTracks()?.forEach((track) => {
       track.stop();
     });
     this.currentStream?.stop?.(); // Stop the stream if needed
+    this.currentStream = undefined;
+
     if (this.currentVideo) {
       this.currentVideo.pause();
       this.currentVideo.src = "";
       this.currentVideo = undefined;
     }
+    if (this.currentImage) {
+      this.currentImage.src = "";
+      this.currentImage = undefined;
+    }
+
+    // Clean up canvas and context
+    if (this.canvas) {
+      // Remove from DOM if present
+      if (this.canvas.parentNode) {
+        this.canvas.remove();
+      }
+      this.canvas = undefined;
+    }
+    this.ctx = undefined;
   }
 
   /**
@@ -464,6 +665,21 @@ export class MediaMockClass {
    */
   public setCanvasScaleFactor(factor: number): typeof MediaMock {
     this.settings.canvasScaleFactor = Math.max(0.1, factor);
+    return this;
+  }
+
+  /**
+   * Set the timeout for media loading (images and videos) in milliseconds.
+   *
+   * @public
+   * @param {number} timeoutMs - Timeout in milliseconds (default: 60000 = 60 seconds)
+   * @returns {typeof MediaMock}
+   */
+  public setMediaTimeout(timeoutMs: number): typeof MediaMock {
+    if (timeoutMs <= 0) {
+      throw new Error("Media timeout must be a positive number");
+    }
+    this.settings.mediaTimeout = timeoutMs;
     return this;
   }
 
@@ -482,12 +698,16 @@ export class MediaMockClass {
     this.canvas.width = width;
     this.canvas.height = height;
 
-    this.ctx = this.canvas.getContext("2d")!;
+    this.ctx = this.canvas.getContext("2d");
+    if (!this.ctx) {
+      throw new Error("Failed to get 2D canvas context");
+    }
 
     this.ctx.fillStyle = "#ffffff";
     this.ctx.fillRect(0, 0, width, height);
 
-    await this.startIntervalDrawing();
+    await this.setMediaURL(this.settings.mediaURL);
+    await this.startDrawingLoop();
 
     if (this.debug) {
       this.enableDebugMode();
