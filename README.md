@@ -88,6 +88,29 @@ MediaMock.mock(devices["Mac Desktop"]);
 await MediaMock.setMediaURL("./assets/640x480-sample.png");
 ```
 
+## Configuring Media Load Timeout
+
+You can adjust the timeout for media loading based on your network conditions or test requirements. The default timeout is 60 seconds for both images and videos.
+
+```typescript
+import { MediaMock, devices } from "@eatsjobs/media-mock";
+
+MediaMock.mock(devices["iPhone 12"]);
+
+// Set a custom timeout of 30 seconds (useful for faster tests)
+MediaMock.setMediaTimeout(30 * 1000);
+await MediaMock.setMediaURL("./assets/640x480-sample.png");
+
+// Or set a longer timeout for slow networks
+MediaMock.setMediaTimeout(5 * 60 * 1000); // 5 minutes
+await MediaMock.setMediaURL("./assets/video.mp4");
+
+// Method chaining is supported
+MediaMock
+  .setMediaTimeout(45 * 1000)
+  .setCanvasScaleFactor(0.8);
+```
+
 ## API Documentation
 
 ### `MediaMock`
@@ -113,6 +136,12 @@ Disables debug mode and removes the mock canvas and image elements from the DOM.
 Sets the scale factor for the image in the canvas. Lower values create more margin, higher values fill more of the canvas.
 
 - **factor**: `number` - Scale factor between 0.1 and 1.0.
+
+#### `setMediaTimeout(timeoutMs: number): MediaMock`
+
+Sets the timeout for media loading (both images and videos) in milliseconds. This allows you to adjust the timeout based on network conditions or test requirements.
+
+- **timeoutMs**: `number` - Timeout in milliseconds. Must be a positive number. Default is 60000 (60 seconds).
 
 #### `addMockDevice(device: MockMediaDeviceInfo): MediaMock`
 
@@ -171,6 +200,7 @@ Interface that contains the mock settings for media URL, device configuration, a
 - **device**: `DeviceConfig` - Specifies the configuration for the mock device, such as resolution and media information.
 - **constraints**: `MediaTrackConstraints` - Specifies video constraints, like resolution and frame rate.
 - **canvasScaleFactor**: `number` - Scale factor for the image in the canvas (0.1-1.0).
+- **mediaTimeout**: `number` - Timeout for media loading in milliseconds (default: 60000 = 60 seconds). Applied to both images and videos.
 
 ---
 

@@ -385,4 +385,24 @@ describe("MediaMock", () => {
     // setMediaURL should reject if the media fails to load
     await expect(MediaMock.setMediaURL(invalidUrl)).rejects.toThrow();
   });
+
+  it("should allow configuring media load timeout", async () => {
+    const device = getDeviceForBrowser();
+    MediaMock.mock(device);
+
+    // Default timeout should be 60 seconds
+    expect(MediaMock["settings"].mediaTimeout).toBe(60 * 1000);
+
+    // Should be able to set custom timeout
+    MediaMock.setMediaTimeout(30 * 1000);
+    expect(MediaMock["settings"].mediaTimeout).toBe(30 * 1000);
+
+    // Should reject invalid timeout values
+    expect(() => MediaMock.setMediaTimeout(0)).toThrow("Media timeout must be a positive number");
+    expect(() => MediaMock.setMediaTimeout(-1000)).toThrow("Media timeout must be a positive number");
+
+    // Should still allow loading with custom timeout
+    await MediaMock.setMediaURL(imageUrl);
+    expect(MediaMock["settings"].mediaURL).toBe(imageUrl);
+  });
 });
