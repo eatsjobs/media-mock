@@ -69,27 +69,64 @@ function isVideoURL(url: string) {
 function playVideo(videoElement: HTMLVideoElement) {
   return new Promise<void>((resolve, reject) => {
     const timeout = setTimeout(() => {
-      reject(new Error("Video loading timed out after 5 seconds"));
-    }, 15000);
+      reject(new Error("Video loading timed out after 60 seconds"));
+    }, 60 * 1000);
 
-    videoElement.addEventListener("loadeddata", async () => {
-      clearTimeout(timeout);
-      try {
-        await videoElement.play();
-        resolve();
-      } catch (e: unknown) {
-        console.error("Video play failed:", e);
-        resolve(); // Continue anyway for testing
-      }
-    });
+    videoElement.addEventListener(
+      "loadeddata",
+      async () => {
+        clearTimeout(timeout);
+        try {
+          await videoElement.play();
+          resolve();
+        } catch (e: unknown) {
+          console.error("Video play failed:", e);
+          resolve(); // Continue anyway for testing
+        }
+      },
+      { once: true },
+    );
 
-    videoElement.addEventListener("error", () => {
-      clearTimeout(timeout);
-      reject(new Error(`Video failed to load: ${videoElement.src}`));
-    });
+    videoElement.addEventListener(
+      "error",
+      (event) => {
+        clearTimeout(timeout);
+        console.error(
+          "Failed to load video source. Ensure the format is supported and the URL is valid.",
+        );
+        console.error("Video error details:", {
+          error: event.error,
+          target: event.target,
+          networkState: videoElement.networkState,
+          readyState: videoElement.readyState,
+          currentSrc: videoElement.currentSrc,
+        });
+        reject(new Error(`Video failed to load: ${videoElement.src}`));
+      },
+      { once: true },
+    );
 
     videoElement.load();
   });
+}
+
+async function loadMedia(
+  mediaURL: string,
+): Promise<HTMLImageElement | HTMLVideoElement> {
+  if (isVideoURL(mediaURL)) {
+    const video = document.createElement("video");
+    video.src = mediaURL;
+    video.muted = true;
+    video.playsInline = true;
+    video.loop = true;
+    video.autoplay = true;
+    video.hidden = true;
+    video.crossOrigin = "anonymous";
+    await playVideo(video);
+    return video;
+  } else {
+    return await loadImage(mediaURL);
+  }
 }
 
 /**
@@ -127,6 +164,8 @@ export class MediaMockClass {
 
   private currentImage: HTMLImageElement | undefined;
 
+  private currentVideo: HTMLVideoElement | undefined;
+
   private mapUnmockFunction: Map<
     keyof MockOptions["mediaDevices"],
     VoidFunction
@@ -159,6 +198,9 @@ export class MediaMockClass {
    * @returns {Promise<MediaMockClass>}
    */
   public async setMediaURL(mediaURL: string): Promise<MediaMockClass> {
+    // Load and validate the media before updating settings
+    await loadMedia(mediaURL);
+
     this.settings.mediaURL = mediaURL;
     if (this.intervalId) {
       await this.startIntervalDrawing();
@@ -172,46 +214,22 @@ export class MediaMockClass {
     }
 
     const { width, height } = this.resolution;
+    const media = await loadMedia(this.settings.mediaURL);
 
     if (isVideoURL(this.settings.mediaURL)) {
-      const video = document.createElement("video");
-      video.addEventListener(
-        "error",
-        (event) => {
-          console.error(
-            "Failed to load video source. Ensure the format is supported and the URL is valid.",
-          );
-          console.error("Video error details:", {
-            error: event.error,
-            target: event.target,
-            networkState: video.networkState,
-            readyState: video.readyState,
-            currentSrc: video.currentSrc,
-          });
-        },
-        { once: true },
-      );
-
-      video.src = this.settings.mediaURL;
-      video.muted = true;
-      video.playsInline = true;
-      video.loop = true;
-      video.autoplay = true;
-      video.hidden = true;
-      video.crossOrigin = "anonymous";
-      await playVideo(video);
+      this.currentVideo = media as HTMLVideoElement;
 
       this.intervalId = setInterval(() => {
-        if (!this.ctx) {
+        if (!this.ctx || !this.currentVideo) {
           return;
         }
         this.ctx.clearRect(0, 0, width, height);
         this.ctx.fillStyle = "#ffffff";
         this.ctx.fillRect(0, 0, width, height);
-        this.ctx.drawImage(video, 0, 0, width, height);
+        this.ctx.drawImage(this.currentVideo, 0, 0, width, height);
       }, 1000 / this.fps);
     } else {
-      this.currentImage = await loadImage(this.settings.mediaURL);
+      this.currentImage = media as HTMLImageElement;
       this.currentImage.id = this.mediaMockImageId;
 
       if (this.debug) {
@@ -428,6 +446,11 @@ export class MediaMockClass {
       track.stop();
     });
     this.currentStream?.stop?.(); // Stop the stream if needed
+    if (this.currentVideo) {
+      this.currentVideo.pause();
+      this.currentVideo.src = "";
+      this.currentVideo = undefined;
+    }
   }
 
   /**
@@ -623,6 +646,7 @@ export class MediaMockClass {
       (res) => res.width === targetWidth && res.height === targetHeight,
     );
 
+    // whatever
     if (directMatch) {
       // If we have direct match but in portrait mode and it's landscape resolution, swap it
       if (isPortrait && directMatch.width > directMatch.height) {

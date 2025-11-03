@@ -359,4 +359,30 @@ describe("MediaMock", () => {
     await MediaMock.setMediaURL(videoUrl);
     expect(MediaMock["settings"].mediaURL).toBe(videoUrl);
   });
+
+  it("should load media file before setMediaURL returns", async () => {
+    const device = getDeviceForBrowser();
+    MediaMock.mock(device);
+
+    // setMediaURL should wait for the image to load before returning
+    await MediaMock.setMediaURL(imageUrl);
+
+    // Verify the URL is set
+    expect(MediaMock["settings"].mediaURL).toBe(imageUrl);
+
+    // Request a stream to ensure the media is ready
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    expect(stream).toBeDefined();
+    expect(stream.getVideoTracks().length).toBeGreaterThan(0);
+  });
+
+  it("should reject setMediaURL if media fails to load", async () => {
+    const device = getDeviceForBrowser();
+    MediaMock.mock(device);
+
+    const invalidUrl = "/assets/nonexistent-file-that-does-not-exist.png";
+
+    // setMediaURL should reject if the media fails to load
+    await expect(MediaMock.setMediaURL(invalidUrl)).rejects.toThrow();
+  });
 });
