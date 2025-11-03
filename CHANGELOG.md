@@ -1,5 +1,11 @@
 # @eatsjobs/media-mock
 
+## 1.1.0
+
+### Minor Changes
+
+- f0cf162: setMediaUrl waits for media to be fully loaded
+
 ## 1.0.2
 
 ### Patch Changes
