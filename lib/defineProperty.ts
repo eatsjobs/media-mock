@@ -25,7 +25,9 @@ export function defineProperty<T extends Record<string | symbol | number, any>>(
     try {
       targetObject[property] = newValue as T[keyof T];
       mockApplied = true;
-      console.log(`Successfully mocked ${String(property)} via direct assignment`);
+      console.log(
+        `Successfully mocked ${String(property)} via direct assignment`,
+      );
     } catch (fallbackError) {
       console.warn(
         `Fallback assignment also failed for ${String(property)}:`,
@@ -61,7 +63,9 @@ export function defineProperty<T extends Record<string | symbol | number, any>>(
       try {
         targetObject[property] = newValue as T[keyof T];
         mockApplied = true;
-        console.log(`Successfully mocked ${String(property)} via direct assignment`);
+        console.log(
+          `Successfully mocked ${String(property)} via direct assignment`,
+        );
       } catch (fallbackError) {
         console.error(
           `All mocking strategies failed for ${String(property)}:`,

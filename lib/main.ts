@@ -235,6 +235,8 @@ export class MediaMockClass {
 
   private intervalId: ReturnType<typeof setTimeout> | null = null;
 
+  private rafId: ReturnType<typeof requestAnimationFrame> | null = null;
+
   private debug: boolean = false;
 
   private canvas: HTMLCanvasElement | undefined | null = undefined;
@@ -251,7 +253,6 @@ export class MediaMockClass {
     height: 480,
   };
 
-  private rafId: number | null = null;
   private lastDrawTime: number = 0;
 
   /**
@@ -289,7 +290,8 @@ export class MediaMockClass {
     }
 
     // Restart drawing with new media if stream is active
-    if (this.intervalId) {
+    // Check both intervalId (setInterval) and rafId (RequestAnimationFrame)
+    if (this.intervalId !== null || this.rafId !== null) {
       await this.startDrawingLoop();
     }
     return this;
@@ -530,11 +532,11 @@ export class MediaMockClass {
     image?.remove();
 
     // Also remove from stored references if they exist
-    if (this.currentImage && this.currentImage.parentNode) {
+    if (this.currentImage?.parentNode) {
       this.currentImage.style.border = "";
       this.currentImage.remove();
     }
-    if (this.canvas && this.canvas.parentNode) {
+    if (this.canvas?.parentNode) {
       this.canvas.style.border = "";
       this.canvas.remove();
     }

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineProperty } from "../lib/defineProperty";
 
 describe("defineProperty", () => {
@@ -169,7 +169,11 @@ describe("defineProperty", () => {
     const sym = Symbol("test");
     testObject[sym as unknown as string] = "symbolValue";
 
-    const cleanup = defineProperty(testObject, sym as unknown as string, "newSymbolValue");
+    const cleanup = defineProperty(
+      testObject,
+      sym as unknown as string,
+      "newSymbolValue",
+    );
 
     expect(testObject[sym as unknown as string]).toBe("newSymbolValue");
 
@@ -216,7 +220,7 @@ describe("defineProperty", () => {
     const cleanup = defineProperty(
       fakeNavigator.mediaDevices,
       "getUserMedia",
-      mockFunc
+      mockFunc,
     );
 
     expect(fakeNavigator.mediaDevices.getUserMedia).toBe(mockFunc);
@@ -237,7 +241,11 @@ describe("defineProperty", () => {
       console.log("mocked");
     };
 
-    const cleanup = defineProperty(eventTarget, "addEventListener", newListener);
+    const cleanup = defineProperty(
+      eventTarget,
+      "addEventListener",
+      newListener,
+    );
 
     expect(eventTarget.addEventListener).toBe(newListener);
 
@@ -355,7 +363,7 @@ describe("defineProperty", () => {
     defineProperty(testObject, "nonConfig", "new");
 
     expect(consoleWarnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Cannot redefine non-configurable property")
+      expect.stringContaining("Cannot redefine non-configurable property"),
     );
 
     consoleWarnSpy.mockRestore();
@@ -448,24 +456,24 @@ describe("defineProperty", () => {
     const cleanup1 = defineProperty(
       mockNavigator.mediaDevices,
       "getUserMedia",
-      mockGetUserMedia
+      mockGetUserMedia,
     );
     const cleanup2 = defineProperty(
       mockNavigator.mediaDevices,
       "enumerateDevices",
-      mockEnumerate
+      mockEnumerate,
     );
     const cleanup3 = defineProperty(
       mockNavigator.mediaDevices,
       "getSupportedConstraints",
-      mockConstraints
+      mockConstraints,
     );
 
     // All should be mocked
     expect(mockNavigator.mediaDevices.getUserMedia).toBe(mockGetUserMedia);
     expect(mockNavigator.mediaDevices.enumerateDevices).toBe(mockEnumerate);
     expect(mockNavigator.mediaDevices.getSupportedConstraints).toBe(
-      mockConstraints
+      mockConstraints,
     );
 
     // Cleanup all
@@ -475,8 +483,6 @@ describe("defineProperty", () => {
 
     // Should be restored (these won't match original exactly in this test,
     // but will be different from the mocked versions)
-    expect(mockNavigator.mediaDevices.getUserMedia).not.toBe(
-      mockGetUserMedia
-    );
+    expect(mockNavigator.mediaDevices.getUserMedia).not.toBe(mockGetUserMedia);
   });
 });

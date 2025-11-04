@@ -278,6 +278,52 @@ describe("MediaMock", () => {
     expect(stream.getVideoTracks()[0].readyState).toBe("live");
   });
 
+  it("should draw new image when media URL is changed while stream is active", async () => {
+    const initialImageUrl = "/assets/ean8_12345670.png";
+    const newMediaUrl = "/assets/florida_dl_front.png";
+
+    // Setup mock with initial image
+    const device = getDeviceForBrowser();
+    MediaMock.enableDebugMode().mock(device);
+    await MediaMock.setMediaURL(initialImageUrl);
+
+    // Request a stream to start the drawing loop
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    expect(stream).toBeDefined();
+
+    // Get the canvas element and verify it's drawing the initial image
+    const canvas = document.querySelector("canvas") as HTMLCanvasElement;
+    expect(canvas).toBeTruthy();
+
+    // Wait for initial draw to complete
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Capture canvas data before media URL change as a screenshot
+    const canvasData1 = canvas.toDataURL("image/png");
+
+    // Verify the initial image is being drawn (barcode has specific characteristics)
+    // The initial canvas should not be all white
+    expect(canvasData1).toBeTruthy();
+    expect(canvasData1.length).toBeGreaterThan(100);
+
+    // Change the media URL while stream is active
+    await MediaMock.setMediaURL(newMediaUrl);
+
+    // Wait for the drawing loop to update with new image
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    // Capture canvas data after media URL change as a screenshot
+    const canvasData2 = canvas.toDataURL("image/png");
+
+    // The canvas data URLs should be different, proving different images were drawn
+    // This is a visual proof that the new media URL was rendered to the canvas
+    expect(canvasData1).not.toBe(canvasData2);
+
+    // Both should have substantial content
+    expect(canvasData2).toBeTruthy();
+    expect(canvasData2.length).toBeGreaterThan(100);
+  });
+
   it("should apply canvas scale factor correctly", () => {
     const scaleFactor = 0.8;
 
@@ -398,8 +444,12 @@ describe("MediaMock", () => {
     expect(MediaMock["settings"].mediaTimeout).toBe(30 * 1000);
 
     // Should reject invalid timeout values
-    expect(() => MediaMock.setMediaTimeout(0)).toThrow("Media timeout must be a positive number");
-    expect(() => MediaMock.setMediaTimeout(-1000)).toThrow("Media timeout must be a positive number");
+    expect(() => MediaMock.setMediaTimeout(0)).toThrow(
+      "Media timeout must be a positive number",
+    );
+    expect(() => MediaMock.setMediaTimeout(-1000)).toThrow(
+      "Media timeout must be a positive number",
+    );
 
     // Should still allow loading with custom timeout
     await MediaMock.setMediaURL(imageUrl);
@@ -499,7 +549,7 @@ describe("MediaMock", () => {
     MediaMock.mock(device);
 
     await expect(MediaMock.setMediaURL("")).rejects.toThrow(
-      "Invalid mediaURL: must be a non-empty string"
+      "Invalid mediaURL: must be a non-empty string",
     );
   });
 
@@ -508,7 +558,7 @@ describe("MediaMock", () => {
     MediaMock.mock(device);
 
     await expect(MediaMock.setMediaURL("   ")).rejects.toThrow(
-      "Invalid mediaURL: must be a non-empty string"
+      "Invalid mediaURL: must be a non-empty string",
     );
   });
 
@@ -516,9 +566,9 @@ describe("MediaMock", () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
 
-    // @ts-ignore - intentionally passing invalid type
+    // @ts-expect-error - intentionally passing invalid type
     await expect(MediaMock.setMediaURL(null)).rejects.toThrow();
-    // @ts-ignore - intentionally passing invalid type
+    // @ts-expect-error - intentionally passing invalid type
     await expect(MediaMock.setMediaURL(undefined)).rejects.toThrow();
   });
 
@@ -603,7 +653,7 @@ describe("MediaMock", () => {
 
     // Get another stream
     const stream2 = await navigator.mediaDevices.getUserMedia({
-      video: { width: 800, height: 600 }
+      video: { width: 800, height: 600 },
     });
     expect(stream2).toBeDefined();
     expect(stream2.getVideoTracks().length).toBeGreaterThan(0);
@@ -1110,7 +1160,8 @@ describe("MediaMock", () => {
     await MediaMock.setMediaURL(imageUrl);
 
     // Trigger an error condition by setting invalid video URL
-    const invalidVideoUrl = "blob:http://invalid/invalid-video-that-does-not-exist";
+    const invalidVideoUrl =
+      "blob:http://invalid/invalid-video-that-does-not-exist";
     try {
       await MediaMock.setMediaURL(invalidVideoUrl);
     } catch (error) {
