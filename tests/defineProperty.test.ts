@@ -167,15 +167,15 @@ describe("defineProperty", () => {
 
   it("should handle symbol properties", () => {
     const sym = Symbol("test");
-    testObject[sym] = "symbolValue";
+    testObject[sym as unknown as string] = "symbolValue";
 
-    const cleanup = defineProperty(testObject, sym, "newSymbolValue");
+    const cleanup = defineProperty(testObject, sym as unknown as string, "newSymbolValue");
 
-    expect(testObject[sym]).toBe("newSymbolValue");
+    expect(testObject[sym as unknown as string]).toBe("newSymbolValue");
 
     cleanup();
 
-    expect(testObject[sym]).toBe("symbolValue");
+    expect(testObject[sym as unknown as string]).toBe("symbolValue");
   });
 
   it("should handle numeric properties", () => {
@@ -413,7 +413,6 @@ describe("defineProperty", () => {
   // ===== SCOPE ISOLATION TESTS =====
 
   it("should not affect other properties when defining one", () => {
-    const original1 = testObject.prop1;
     const original2 = testObject.prop2;
 
     defineProperty(testObject, "prop1", "new1");
@@ -436,7 +435,7 @@ describe("defineProperty", () => {
   it("should simulate navigator.mediaDevices mock scenario", () => {
     const mockNavigator = {
       mediaDevices: {
-        getUserMedia: async (constraints: unknown) => ({}),
+        getUserMedia: async (_constraints: unknown) => ({}),
         enumerateDevices: async () => [],
         getSupportedConstraints: () => ({}),
       },
