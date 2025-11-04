@@ -1,5 +1,11 @@
 # @eatsjobs/media-mock
 
+## 1.1.1
+
+### Patch Changes
+
+- 88e910d: Fix tests
+
 ## 1.1.0
 
 ### Minor Changes
