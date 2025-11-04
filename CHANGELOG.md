@@ -1,5 +1,11 @@
 # @eatsjobs/media-mock
 
+## 1.1.2
+
+### Patch Changes
+
+- 24e1af6: Fix image not painted after setMediaURL if using raf
+
 ## 1.1.1
 
 ### Patch Changes
