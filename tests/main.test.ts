@@ -1253,4 +1253,114 @@ describe("MediaMock", () => {
     expect(settings.width).toBeGreaterThan(0);
     expect(settings.height).toBeGreaterThan(0);
   });
+
+  // ===== STREAM LABEL TESTS =====
+
+  it("should set stream track label to match selected device label", async () => {
+    const device = getDeviceForBrowser();
+    MediaMock.mock(device);
+    await MediaMock.setMediaURL(imageUrl);
+
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    expect(stream).toBeDefined();
+    expect(stream.getVideoTracks().length).toBeGreaterThan(0);
+
+    const videoTrack = stream.getVideoTracks()[0];
+
+    // Get the expected label from the device's first videoinput device
+    const expectedLabel = device.mediaDeviceInfo.find(
+      (d) => d.kind === "videoinput",
+    )?.label;
+
+    // Stream track label should match the device label
+    expect(videoTrack.label).toBe(expectedLabel);
+  });
+
+  it("should select front camera when facingMode user constraint is specified", async () => {
+    const device = getDeviceForBrowser();
+    MediaMock.mock(device);
+    await MediaMock.setMediaURL(imageUrl);
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "user" },
+    });
+    expect(stream).toBeDefined();
+
+    const videoTrack = stream.getVideoTracks()[0];
+
+    // Get the last front camera (user) from the device (should be the primary one)
+    const frontCameras = device.mediaDeviceInfo.filter(
+      (d) => d.kind === "videoinput" && d.getCapabilities().facingMode?.includes("user"),
+    );
+    const primaryFrontCamera = frontCameras.length > 0 ? frontCameras[frontCameras.length - 1] : undefined;
+
+    // Stream track label should match the selected front camera label
+    expect(videoTrack.label).toBe(primaryFrontCamera?.label);
+  });
+
+  it("should select back camera when facingMode environment constraint is specified", async () => {
+    const device = getDeviceForBrowser();
+    MediaMock.mock(device);
+    await MediaMock.setMediaURL(imageUrl);
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "environment" },
+    });
+    expect(stream).toBeDefined();
+
+    const videoTrack = stream.getVideoTracks()[0];
+
+    // Get the last back camera (environment) from the device (should be the primary one)
+    const backCameras = device.mediaDeviceInfo.filter(
+      (d) => d.kind === "videoinput" && d.getCapabilities().facingMode?.includes("environment"),
+    );
+    const primaryBackCamera = backCameras.length > 0 ? backCameras[backCameras.length - 1] : undefined;
+
+    // If back camera exists, verify the label matches
+    if (primaryBackCamera) {
+      expect(videoTrack.label).toBe(primaryBackCamera.label);
+    }
+  });
+
+  it("should set stream track deviceId to match selected device", async () => {
+    const device = getDeviceForBrowser();
+    MediaMock.mock(device);
+    await MediaMock.setMediaURL(imageUrl);
+
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    expect(stream).toBeDefined();
+    expect(stream.getVideoTracks().length).toBeGreaterThan(0);
+
+    const videoTrack = stream.getVideoTracks()[0];
+
+    // Get the expected deviceId from the device's first videoinput device
+    const expectedDeviceId = device.mediaDeviceInfo.find(
+      (d) => d.kind === "videoinput",
+    )?.deviceId;
+
+    // Stream track deviceId should match the device deviceId
+    expect(videoTrack.id).toBe(expectedDeviceId);
+  });
+
+  it("should set stream track deviceId based on facingMode constraint", async () => {
+    const device = getDeviceForBrowser();
+    MediaMock.mock(device);
+    await MediaMock.setMediaURL(imageUrl);
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "user" },
+    });
+    expect(stream).toBeDefined();
+
+    const videoTrack = stream.getVideoTracks()[0];
+
+    // Get the last front camera (user) from the device (should be the primary one)
+    const frontCameras = device.mediaDeviceInfo.filter(
+      (d) => d.kind === "videoinput" && d.getCapabilities().facingMode?.includes("user"),
+    );
+    const primaryFrontCamera = frontCameras.length > 0 ? frontCameras[frontCameras.length - 1] : undefined;
+
+    // Stream track deviceId should match the selected camera's deviceId
+    expect(videoTrack.id).toBe(primaryFrontCamera?.deviceId);
+  });
 });

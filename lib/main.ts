@@ -720,31 +720,56 @@ export class MediaMockClass {
 
     const videoTracks = canvasStream?.getVideoTracks() ?? [];
 
-    // Normalize MediaStreamTrack methods to provide consistent real-device behavior
-    videoTracks.forEach((track) => {
+    // We detect the facing mode from constraints and get the video device based on that
+    // then we override the id and label based on that
+    const facingMode = this.getFacingModeFromConstraints(constraints);
+    const videoDevice = this.getDeviceForFacingMode(
+      facingMode,
+      this.settings.device,
+    );
+
+    videoTracks.forEach((track: MediaStreamTrack) => {
+      // Set the track label to match the selected device label
+      if (videoDevice?.label) {
+        Object.defineProperty(track, "label", {
+          value: videoDevice.label,
+          writable: false,
+          configurable: false,
+        });
+      }
+
+      // Set the track id (deviceId) to match the selected device
+      if (videoDevice?.deviceId) {
+        Object.defineProperty(track, "id", {
+          value: videoDevice.deviceId,
+          writable: false,
+          configurable: false,
+        });
+      }
+
       // Ensure getCapabilities method is always available (all real devices have this)
       if (!track.getCapabilities) {
-        // Find the first video input device to get its capabilities
-        const videoDevice = this.settings.device.mediaDeviceInfo.find(
-          (device) => device.kind === "videoinput",
-        );
-
         if (videoDevice?.getCapabilities) {
           // Use the device-specific capabilities from mockCapabilities
-          track.getCapabilities = () => videoDevice.getCapabilities();
+          // Bind to track so 'this' refers to the track
+          track.getCapabilities = function (this: MediaStreamTrack) {
+            return videoDevice.getCapabilities();
+          }.bind(track);
         } else {
           // Fallback to device resolutions if no specific capabilities defined
           const deviceResolutions = this.settings.device.videoResolutions;
           const widths = deviceResolutions.map((res) => res.width);
           const heights = deviceResolutions.map((res) => res.height);
 
-          track.getCapabilities = () => ({
-            width: { min: Math.min(...widths), max: Math.max(...widths) },
-            height: { min: Math.min(...heights), max: Math.max(...heights) },
-            frameRate: { min: 1, max: 60 },
-            facingMode: ["user", "environment"],
-            resizeMode: ["none", "crop-and-scale"],
-          });
+          track.getCapabilities = function (this: MediaStreamTrack) {
+            return {
+              width: { min: Math.min(...widths), max: Math.max(...widths) },
+              height: { min: Math.min(...heights), max: Math.max(...heights) },
+              frameRate: { min: 1, max: 60 },
+              facingMode: ["user", "environment"],
+              resizeMode: ["none", "crop-and-scale"],
+            };
+          }.bind(track);
         }
       }
 
@@ -782,6 +807,68 @@ export class MediaMockClass {
         : constraints.video.frameRate.ideal || 30;
     }
     return 30;
+  }
+
+  /**
+   * Extract facingMode from constraints (can be a string or ConstrainDOMString)
+   */
+  private getFacingModeFromConstraints(
+    constraints: MediaStreamConstraints,
+  ): string | null {
+    if (typeof constraints.video === "object" && constraints.video.facingMode) {
+      const facingMode = constraints.video.facingMode;
+      if (typeof facingMode === "string") {
+        return facingMode;
+      }
+      // facingMode can be an object with ideal/exact properties
+      const facingModeObj = facingMode as Record<string, unknown>;
+      if (facingModeObj.ideal) {
+        const ideal = facingModeObj.ideal;
+        return Array.isArray(ideal) ? ideal[0] : (ideal as string);
+      }
+      if (facingModeObj.exact) {
+        const exact = facingModeObj.exact;
+        return Array.isArray(exact) ? exact[0] : (exact as string);
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Get the appropriate camera device based on facingMode
+   * Falls back to last videoinput if no matching camera found
+   */
+  private getDeviceForFacingMode(
+    facingMode: string | null,
+    device: DeviceConfig,
+  ): MockMediaDeviceInfo | undefined {
+    const videoDevices = device.mediaDeviceInfo.filter(
+      (d) => d.kind === "videoinput",
+    );
+
+    if (!videoDevices.length) {
+      return undefined;
+    }
+
+    if (!facingMode) {
+      return videoDevices[0];
+    }
+
+    // Find all devices that support the requested facingMode and return the last one
+    // This usually is the Back Camera or camera2 0, facing back for the given default devices
+    const matchingDevices = videoDevices.filter((d) => {
+      const capabilities = d.getCapabilities();
+      const supportedFacingModes = capabilities.facingMode;
+      return (
+        Array.isArray(supportedFacingModes) &&
+        supportedFacingModes.includes(facingMode)
+      );
+    });
+
+    // Return the last matching device if found, otherwise fall back to first videoinput
+    return matchingDevices.length > 0
+      ? matchingDevices[matchingDevices.length - 1]
+      : videoDevices[0];
   }
 
   /**
