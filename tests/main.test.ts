@@ -1363,4 +1363,50 @@ describe("MediaMock", () => {
     // Stream track deviceId should match the selected camera's deviceId
     expect(videoTrack.id).toBe(primaryFrontCamera?.deviceId);
   });
+
+  it("should support facingMode as object with ideal constraint", async () => {
+    const device = getDeviceForBrowser();
+    MediaMock.mock(device);
+    await MediaMock.setMediaURL(imageUrl);
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" } },
+    });
+    expect(stream).toBeDefined();
+
+    const videoTrack = stream.getVideoTracks()[0];
+
+    // Get the last back camera (environment) from the device
+    const backCameras = device.mediaDeviceInfo.filter(
+      (d) => d.kind === "videoinput" && d.getCapabilities().facingMode?.includes("environment"),
+    );
+    const primaryBackCamera = backCameras.length > 0 ? backCameras[backCameras.length - 1] : undefined;
+
+    // Stream track label should match the selected back camera
+    if (primaryBackCamera) {
+      expect(videoTrack.label).toBe(primaryBackCamera.label);
+    }
+  });
+
+  it("should support facingMode as object with exact constraint", async () => {
+    const device = getDeviceForBrowser();
+    MediaMock.mock(device);
+    await MediaMock.setMediaURL(imageUrl);
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { exact: "user" } },
+    });
+    expect(stream).toBeDefined();
+
+    const videoTrack = stream.getVideoTracks()[0];
+
+    // Get the last front camera (user) from the device
+    const frontCameras = device.mediaDeviceInfo.filter(
+      (d) => d.kind === "videoinput" && d.getCapabilities().facingMode?.includes("user"),
+    );
+    const primaryFrontCamera = frontCameras.length > 0 ? frontCameras[frontCameras.length - 1] : undefined;
+
+    // Stream track label should match the selected front camera
+    expect(videoTrack.label).toBe(primaryFrontCamera?.label);
+  });
 });
