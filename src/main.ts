@@ -4,14 +4,19 @@ async function startStream() {
   const videoElement = document.querySelector<HTMLVideoElement>(
     "#video",
   ) as HTMLVideoElement;
-  // const assetURL = "/assets/ean8_12345670.png"; // https://www.pexels.com/video/signing-the-parcel-4440957/
+  // const assetURL = "/assets/ean8_12345670.png";
+  // https://www.pexels.com/video/signing-the-parcel-4440957/
   const videoAssetURL = "/assets/hd_1280_720_25fps.mp4";
   MediaMock.setMockedVideoTracksHandler((tracks) => {
     const capabilities = tracks[0].getCapabilities();
-    tracks[0].getCapabilities = () => ({
-      ...capabilities,
-      whatever: 1,
-    });
+    tracks[0].getCapabilities = function (
+      this: MediaStreamTrack,
+    ): MediaTrackCapabilities & { whatever: number } {
+      return {
+        ...capabilities,
+        whatever: 1,
+      };
+    }.bind(tracks[0]);
     return tracks;
   }).mock(devices["iPhone 12"]);
 
@@ -20,10 +25,15 @@ async function startStream() {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
       video: {
+        facingMode: { exact: "environment" },
         width: { ideal: 1920 },
         height: { ideal: 1080 },
         frameRate: { ideal: 5 },
       },
+    });
+
+    stream.getVideoTracks().forEach((track) => {
+      console.log("Track:", track.label, track.id);
     });
 
     videoElement.srcObject = stream;
