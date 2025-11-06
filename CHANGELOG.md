@@ -1,5 +1,11 @@
 # @eatsjobs/media-mock
 
+## 1.2.0
+
+### Minor Changes
+
+- 76447bf: The media track labels and id have now the devices ones
+
 ## 1.1.2
 
 ### Patch Changes
