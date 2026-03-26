@@ -61,7 +61,7 @@
     "test-coverage": "vitest --run --coverage",
     "changeset": "changeset",
     "version-packages": "changeset version",
-    "release": "npm run build && npx changeset publish",
+    "release": "npm run build && npx changeset publish --provenance",
     "check-types": "npx attw $(npm pack) --profile=node16"
   },
   "devDependencies": {
