@@ -1,6 +1,6 @@
 {
   "name": "@eatsjobs/media-mock",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "publishConfig": {
     "access": "public"
   },
@@ -26,6 +26,7 @@
   "license": "MIT",
   "umd:main": "./dist/media-mock.umd.min.js",
   "unpkg": "./dist/media-mock.umd.min.js",
+  "jsdelivr": "./dist/media-mock.umd.min.js",
   "author": "@eatsjobs Pasquale Mangialavori",
   "type": "module",
   "sideEffects": false,
@@ -39,6 +40,7 @@
   "module": "./dist/media-mock.js",
   "types": "./dist/main.d.ts",
   "exports": {
+    "./package.json": "./package.json",
     ".": {
       "import": {
         "types": "./dist/main.d.ts",

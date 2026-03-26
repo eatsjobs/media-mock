@@ -1,5 +1,12 @@
 # @eatsjobs/media-mock
 
+## 1.2.1
+
+### Patch Changes
+
+- Add `jsdelivr` CDN field to package.json for jsdelivr.com support
+- Add export for package.json
+
 ## 1.2.0
 
 ### Minor Changes
