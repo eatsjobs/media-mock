@@ -18,6 +18,7 @@ Can also be used as browser extension please have a look at this repo [https://g
 ## Table of Contents
 
 - [Installation](#installation)
+  - [CDN](#cdn)
 - [Usage](#usage)
 - [API Documentation](#api-documentation)
   - [MediaMock](#mediamock)
@@ -52,6 +53,42 @@ Install with jsr:
 
 ```bash
 npx jsr add @eatsjobs/media-mock
+```
+
+### CDN
+
+Include directly in your HTML via [jsDelivr](https://www.jsdelivr.com/) or [unpkg](https://unpkg.com/):
+
+**jsDelivr** (recommended):
+
+```html
+<!-- Latest version -->
+<script src="https://cdn.jsdelivr.net/npm/@eatsjobs/media-mock"></script>
+
+<!-- Specific version -->
+<script src="https://cdn.jsdelivr.net/npm/@eatsjobs/media-mock@1.2.1"></script>
+```
+
+**unpkg**:
+
+```html
+<!-- Latest version -->
+<script src="https://unpkg.com/@eatsjobs/media-mock"></script>
+
+<!-- Specific version -->
+<script src="https://unpkg.com/@eatsjobs/media-mock@1.2.1"></script>
+```
+
+When loaded via CDN, `MediaMock` and `devices` are available on the global `window.MediaMock` object:
+
+```html
+<script src="https://cdn.jsdelivr.net/npm/@eatsjobs/media-mock"></script>
+<script>
+  const { MediaMock, devices } = window.MediaMock;
+
+  MediaMock.mock(devices["iPhone 12"]);
+  await MediaMock.setMediaURL("./assets/640x480-sample.png");
+</script>
 ```
 
 ## Usage
