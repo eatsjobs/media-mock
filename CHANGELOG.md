@@ -1,5 +1,11 @@
 # @eatsjobs/media-mock
 
+## 1.2.2
+
+### Patch Changes
+
+- a62c662: Add cdn section to README.md
+
 ## 1.2.1
 
 ### Patch Changes
