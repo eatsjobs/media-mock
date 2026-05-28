@@ -720,13 +720,23 @@ export class MediaMockClass {
 
     const videoTracks = canvasStream?.getVideoTracks() ?? [];
 
-    // We detect the facing mode from constraints and get the video device based on that
-    // then we override the id and label based on that
+    // Prefer an explicit deviceId from constraints — real browsers honor this. Fall
+    // back to facingMode-based selection, then to the first videoinput.
+    const requestedDeviceId = this.getDeviceIdFromConstraints(constraints);
     const facingMode = this.getFacingModeFromConstraints(constraints);
-    const videoDevice = this.getDeviceForFacingMode(
-      facingMode,
-      this.settings.device,
-    );
+    let videoDevice: MockMediaDeviceInfo | undefined;
+    if (requestedDeviceId) {
+      videoDevice = this.settings.device.mediaDeviceInfo.find(
+        (device) =>
+          device.kind === "videoinput" && device.deviceId === requestedDeviceId,
+      );
+    }
+    if (!videoDevice) {
+      videoDevice = this.getDeviceForFacingMode(
+        facingMode,
+        this.settings.device,
+      );
+    }
 
     videoTracks.forEach((track: MediaStreamTrack) => {
       // Set the track label to match the selected device label
@@ -789,6 +799,28 @@ export class MediaMockClass {
           settings.height = this.resolution.height;
         }
 
+        // Real devices always expose the source device's deviceId — overwrite the
+        // canvas-stream's synthetic track id so consumers can confirm which device
+        // this stream came from. Some browsers populate settings.deviceId with the
+        // underlying MediaStreamTrack id (a random uuid), which is misleading.
+        if (videoDevice?.deviceId) {
+          settings.deviceId = videoDevice.deviceId;
+        }
+
+        // Expose facingMode when known — many consumers read this to disambiguate
+        // front vs back cameras (especially on iOS Safari, where the same physical
+        // back camera can be advertised under multiple labels).
+        if (settings.facingMode === undefined) {
+          const capabilities = videoDevice?.getCapabilities?.();
+          const supportedFacingModes = capabilities?.facingMode;
+          if (
+            Array.isArray(supportedFacingModes) &&
+            supportedFacingModes.length > 0
+          ) {
+            settings.facingMode = supportedFacingModes[0];
+          }
+        }
+
         return settings;
       };
     });
@@ -830,6 +862,40 @@ export class MediaMockClass {
         const exact = facingModeObj.exact;
         return Array.isArray(exact) ? exact[0] : (exact as string);
       }
+    }
+    return null;
+  }
+
+  /**
+   * Extract deviceId from constraints. Handles string, ConstrainDOMString, and
+   * ideal/exact variants (each possibly an array).
+   */
+  private getDeviceIdFromConstraints(
+    constraints: MediaStreamConstraints,
+  ): string | null {
+    if (typeof constraints.video !== "object" || !constraints.video.deviceId) {
+      return null;
+    }
+    const deviceIdConstraint = constraints.video.deviceId as unknown;
+    if (typeof deviceIdConstraint === "string") {
+      return deviceIdConstraint;
+    }
+    if (deviceIdConstraint && typeof deviceIdConstraint === "object") {
+      const constraintObject = deviceIdConstraint as Record<string, unknown>;
+      const pickString = (candidate: unknown): string | null => {
+        if (typeof candidate === "string") {
+          return candidate;
+        }
+        if (Array.isArray(candidate) && typeof candidate[0] === "string") {
+          return candidate[0];
+        }
+        return null;
+      };
+      return (
+        pickString(constraintObject.exact) ??
+        pickString(constraintObject.ideal) ??
+        null
+      );
     }
     return null;
   }
