@@ -1,5 +1,11 @@
 # @eatsjobs/media-mock
 
+## 1.2.3
+
+### Patch Changes
+
+- f177c71: Support explicit deviceId constraints and expose real-device fields
+
 ## 1.2.2
 
 ### Patch Changes
