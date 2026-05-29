@@ -1,5 +1,4 @@
 import type { MockMediaDeviceInfo } from "./createMediaDeviceInfo";
-import { defineProperty } from "./defineProperty";
 import { type DeviceConfig, devices } from "./devices";
 import { loadImage } from "./loadImage";
 
@@ -646,42 +645,39 @@ export class MediaMockClass {
   ): typeof MediaMock {
     this.settings.device = device;
 
-    if (typeof navigator.mediaDevices === "undefined") {
-      class MockedMediaDevices extends EventTarget {}
-      defineProperty(navigator, "mediaDevices", new MockedMediaDevices());
+    if (typeof MediaDevices === "undefined") {
+      console.warn("MediaDevices is not available in this environment — mock() has no effect.");
+      return this;
     }
 
+    // biome-ignore lint/suspicious/noExplicitAny: patching prototype properties by name requires any
+    type AnyFn = (...args: any[]) => any;
+    const proto = MediaDevices.prototype as unknown as Record<string, AnyFn>;
+
+    const patchProto = (
+      key: keyof MockOptions["mediaDevices"],
+      mockFn: AnyFn,
+    ): void => {
+      const original = proto[key];
+      proto[key] = mockFn;
+      this.mapUnmockFunction.set(key, () => {
+        proto[key] = original;
+      });
+    };
+
     if (options?.mediaDevices.getUserMedia) {
-      const unmockGetUserMedia = defineProperty(
-        navigator.mediaDevices,
+      patchProto(
         "getUserMedia",
-        (constraints: MediaStreamConstraints) =>
-          this.getMockStream(constraints),
+        (constraints: MediaStreamConstraints) => this.getMockStream(constraints),
       );
-      this.mapUnmockFunction.set("getUserMedia", unmockGetUserMedia);
     }
 
     if (options?.mediaDevices.getSupportedConstraints) {
-      const unmockGetSupportedConstraints = defineProperty(
-        navigator.mediaDevices,
-        "getSupportedConstraints",
-        () => {
-          return this.settings.constraints;
-        },
-      );
-      this.mapUnmockFunction.set(
-        "getSupportedConstraints",
-        unmockGetSupportedConstraints,
-      );
+      patchProto("getSupportedConstraints", () => this.settings.constraints);
     }
 
     if (options?.mediaDevices.enumerateDevices) {
-      const unmockEnumerateDevices = defineProperty(
-        navigator.mediaDevices,
-        "enumerateDevices",
-        async () => this.settings.device.mediaDeviceInfo,
-      );
-      this.mapUnmockFunction.set("enumerateDevices", unmockEnumerateDevices);
+      patchProto("enumerateDevices", async () => this.settings.device.mediaDeviceInfo);
     }
 
     return this;
