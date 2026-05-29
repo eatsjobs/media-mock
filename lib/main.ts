@@ -646,7 +646,9 @@ export class MediaMockClass {
     this.settings.device = device;
 
     if (typeof MediaDevices === "undefined") {
-      console.warn("MediaDevices is not available in this environment — mock() has no effect.");
+      console.warn(
+        "MediaDevices is not available in this environment — mock() has no effect.",
+      );
       return this;
     }
 
@@ -666,9 +668,8 @@ export class MediaMockClass {
     };
 
     if (options?.mediaDevices.getUserMedia) {
-      patchProto(
-        "getUserMedia",
-        (constraints: MediaStreamConstraints) => this.getMockStream(constraints),
+      patchProto("getUserMedia", (constraints: MediaStreamConstraints) =>
+        this.getMockStream(constraints),
       );
     }
 
@@ -677,7 +678,10 @@ export class MediaMockClass {
     }
 
     if (options?.mediaDevices.enumerateDevices) {
-      patchProto("enumerateDevices", async () => this.settings.device.mediaDeviceInfo);
+      patchProto(
+        "enumerateDevices",
+        async () => this.settings.device.mediaDeviceInfo,
+      );
     }
 
     return this;
@@ -781,13 +785,16 @@ export class MediaMockClass {
    */
   private resolveTimerMode(): TimerMode.Raf | TimerMode.SetInterval {
     if (this.settings.timerMode === TimerMode.Raf) return TimerMode.Raf;
-    if (this.settings.timerMode === TimerMode.SetInterval) return TimerMode.SetInterval;
+    if (this.settings.timerMode === TimerMode.SetInterval)
+      return TimerMode.SetInterval;
     // Auto: fall back to setInterval when the page may not be compositing
     const pageHidden =
       typeof document !== "undefined" &&
       typeof document.hidden !== "undefined" &&
       document.hidden;
-    return pageHidden || !isRAFSupported() ? TimerMode.SetInterval : TimerMode.Raf;
+    return pageHidden || !isRAFSupported()
+      ? TimerMode.SetInterval
+      : TimerMode.Raf;
   }
 
   private async getMockStream(
