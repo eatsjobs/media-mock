@@ -37,21 +37,26 @@ await MediaMock.setMediaURL("./assets/image.png")
 
 ## Development Commands
 
+This project uses **pnpm** as its package manager (pinned via the `packageManager` field; enable with `corepack enable`).
+
 ```bash
+# Install dependencies
+pnpm install
+
 # Development server with live reload
-npm run dev
+pnpm dev
 
 # Build the library (TypeScript compilation + Vite bundling)
-npm run build
+pnpm build
 
 # Run tests (Vitest with Playwright browser testing)
-npm test
+pnpm test
 
 # Run tests with coverage
-npm run test-coverage
+pnpm test-coverage
 
 # Type checking for package compatibility
-npm run check-types
+pnpm check-types
 ```
 
 ## Testing Architecture

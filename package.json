@@ -24,6 +24,7 @@
     "ui-testing"
   ],
   "license": "MIT",
+  "packageManager": "pnpm@11.3.0",
   "umd:main": "./dist/media-mock.umd.min.js",
   "unpkg": "./dist/media-mock.umd.min.js",
   "jsdelivr": "./dist/media-mock.umd.min.js",
@@ -61,27 +62,29 @@
     "test-coverage": "vitest --run --coverage",
     "changeset": "changeset",
     "version-packages": "changeset version",
-    "release": "npm run build && npx changeset publish --provenance",
-    "check-types": "npx attw $(npm pack) --profile=node16"
+    "release": "pnpm run build && pnpm exec changeset publish --provenance",
+    "check-types": "pnpm exec attw $(pnpm pack | tail -1) --profile=node16"
   },
   "devDependencies": {
+    "@arethetypeswrong/core": "~0.18.2",
     "@arethetypeswrong/cli": "~0.18.2",
-    "@biomejs/biome": "2.2.5",
+    "@biomejs/biome": "2.4.16",
     "@changesets/cli": "^2.29.7",
-    "@codecov/vite-plugin": "^1.9.1",
-    "@types/node": "^24.7.0",
-    "@vitest/browser": "^3.2.4",
-    "@vitest/coverage-istanbul": "^3.2.4",
-    "@vitest/coverage-v8": "^3.2.4",
-    "@vitest/ui": "^3.2.4",
+    "@codecov/vite-plugin": "^2.0.1",
+    "@types/node": "^25.9.1",
+    "@vitest/browser": "^4.1.7",
+    "@vitest/browser-playwright": "^4.1.7",
+    "@vitest/coverage-istanbul": "^4.1.7",
+    "@vitest/coverage-v8": "^4.1.7",
+    "@vitest/ui": "^4.1.7",
     "playwright": "^1.60.0",
-    "typescript": "~5.7.3",
-    "vite": "^6.3.5",
-    "vite-plugin-dts": "^4.5.4",
-    "vitest": "^3.2.4"
+    "typescript": "~6.0.3",
+    "vite": "^8.0.14",
+    "vite-plugin-dts": "^5.0.1",
+    "vitest": "^4.1.7"
   },
   "engines": {
-    "npm": ">=7.0.0",
+    "pnpm": ">=9.0.0",
     "node": ">=16.0.0"
   }
 }
