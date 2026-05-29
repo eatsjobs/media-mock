@@ -1240,5 +1240,5 @@ export class MediaMockClass {
 }
 
 export * from "./createMediaDeviceInfo";
-export { devices, type DeviceConfig };
+export { type DeviceConfig, devices };
 export const MediaMock: MediaMockClass = new MediaMockClass();
