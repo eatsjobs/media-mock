@@ -3,21 +3,40 @@ export async function loadImage(
   timeoutMs: number = 60 * 1000,
 ): Promise<HTMLImageElement> {
   const image = new Image();
-  image.src = imageURL;
-  try {
-    // Race between decode and timeout to prevent hanging indefinitely
-    await Promise.race([
-      image.decode(),
-      new Promise<never>((_, reject) =>
-        setTimeout(
-          () =>
-            reject(
-              new Error(`Image load timeout after ${timeoutMs / 1000} seconds`),
-            ),
-          timeoutMs,
+
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(
+      () =>
+        reject(
+          new Error(`Image load timeout after ${timeoutMs / 1000} seconds`),
         ),
-      ),
-    ]);
+      timeoutMs,
+    ),
+  );
+
+  try {
+    // 1. Set src and wait for the network fetch to complete (load event).
+    const loadPromise = new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = (error: unknown) =>
+        reject(new Error(`Failed to load image: ${imageURL}: ${error}`));
+    });
+    image.src = imageURL;
+    await Promise.race([loadPromise, timeout]);
+
+    // 2. Decode the image: ensures pixel data is fully decoded before use.
+    //    decode() can be called after load; the browser may have already
+    //    started decoding during the fetch.
+    await Promise.race([image.decode(), timeout]);
+
+    // 3. Force pixel data into CPU-accessible memory. On some webkit versions,
+    //    decode() resolves before the pixel data is ready for canvas drawImage —
+    //    a 1×1 warmup draw commits it immediately.
+    const warmup = document.createElement("canvas");
+    warmup.width = 1;
+    warmup.height = 1;
+    warmup.getContext("2d")?.drawImage(image, 0, 0, 1, 1);
+
     return image;
   } catch (error: unknown) {
     throw new Error(`Failed to load image: ${imageURL}. Details: ${error}`);

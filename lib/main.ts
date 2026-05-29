@@ -21,6 +21,22 @@ function createDefaultMockOptions(): MockOptions {
   };
 }
 
+/**
+ * Controls the timer used for the canvas drawing loop that feeds captureStream.
+ *
+ * - `Auto` — uses `setInterval` when `requestAnimationFrame` may be throttled
+ *   (detected by checking `document.hidden`), otherwise uses `requestAnimationFrame`.
+ * - `Raf` — always uses `requestAnimationFrame`.
+ * - `SetInterval` — always uses `setInterval`. More reliable in headless/virtual
+ *   display environments (e.g. xvfb) where webkit throttles rAF for inactive pages,
+ *   causing `captureStream` to stop emitting frames.
+ */
+export enum TimerMode {
+  Auto = "auto",
+  Raf = "raf",
+  SetInterval = "setInterval",
+}
+
 export interface Settings {
   /**
    * The media url to use for the mock. Video or image.
@@ -49,6 +65,14 @@ export interface Settings {
    * @default 60000 (60 seconds)
    */
   mediaTimeout: number;
+
+  /**
+   * Timer strategy for the canvas drawing loop.
+   * @type {TimerMode}
+   * @default TimerMode.SetInterval
+   * @see TimerMode
+   */
+  timerMode: TimerMode;
 }
 
 function isVideoURL(url: string) {
@@ -216,6 +240,7 @@ export class MediaMockClass {
     constraints: devices["iPhone 12"].supportedConstraints,
     canvasScaleFactor: 1,
     mediaTimeout: 60 * 1000, // 60 seconds
+    timerMode: TimerMode.SetInterval,
   };
 
   private readonly mediaMockImageId = "media-mock-image";
@@ -279,18 +304,35 @@ export class MediaMockClass {
         this.currentVideo.pause();
         this.currentVideo.src = "";
       }
+      // Remove previous image from DOM if present
+      if (this.currentImage?.parentNode) {
+        this.currentImage.remove();
+      }
       this.currentImage = media;
       this.currentVideo = undefined;
+      // Append the image to the document offscreen. Keeping the source image in
+      // the DOM prevents some webkit versions from evicting its decoded pixel data
+      // from GPU memory, which would cause drawImage to produce blank frames.
+      if (typeof document !== "undefined" && document.body) {
+        media.style.cssText =
+          "position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none";
+        media.setAttribute("aria-hidden", "true");
+        document.body.append(media);
+      }
     } else if (media instanceof HTMLVideoElement) {
       if (this.currentImage) {
         this.currentImage.src = "";
+        if (this.currentImage.parentNode) {
+          this.currentImage.remove();
+        }
       }
       this.currentVideo = media;
       this.currentImage = undefined;
     }
 
-    // Restart drawing with new media if stream is active
-    // Check both intervalId (setInterval) and rafId (RequestAnimationFrame)
+    // Restart drawing with new media if stream is active.
+    // startDrawingLoop redraws immediately, so the canvas (and captureStream track)
+    // picks up the new image content without any gap.
     if (this.intervalId !== null || this.rafId !== null) {
       await this.startDrawingLoop();
     }
@@ -347,16 +389,14 @@ export class MediaMockClass {
         this.lastDrawTime = now;
       }
 
-      if (isRAFSupported()) {
+      if (this.resolveTimerMode() === TimerMode.Raf && isRAFSupported()) {
         this.rafId = requestAnimationFrame(drawFrame);
       }
     };
 
-    if (isRAFSupported()) {
-      // Use RequestAnimationFrame for better performance
+    if (this.resolveTimerMode() === TimerMode.Raf && isRAFSupported()) {
       this.rafId = requestAnimationFrame(drawFrame);
     } else {
-      // Fallback to setInterval for browsers without RAF
       this.intervalId = setInterval(() => {
         if (!this.ctx || !this.currentVideo) {
           return;
@@ -428,18 +468,26 @@ export class MediaMockClass {
         scaledHeight,
       );
 
-      // For images, schedule next draw with RequestAnimationFrame
-      if (isRAFSupported()) {
+      // Schedule next draw via the resolved timer mode
+      if (this.resolveTimerMode() === TimerMode.Raf && isRAFSupported()) {
         this.rafId = requestAnimationFrame(drawImage);
       }
     };
 
-    if (isRAFSupported()) {
-      // Use RequestAnimationFrame for images
-      this.rafId = requestAnimationFrame(drawImage);
+    // Draw the first frame synchronously so captureStream sees content immediately.
+    drawImage();
+
+    // Force pixel data commitment by reading back one pixel. On some webkit versions,
+    // drawing a cached Image to a freshly-created canvas doesn't immediately commit
+    // the pixel data — a getImageData call flushes pending GPU commands before
+    // captureStream is started.
+    this.ctx?.getImageData(0, 0, 1, 1);
+
+    const frameInterval = 1000 / this.fps;
+    if (this.resolveTimerMode() === TimerMode.Raf && isRAFSupported()) {
+      // rAF chain already primed by the synchronous drawImage() call above
     } else {
-      // Fallback to setInterval for browsers without RAF
-      const frameInterval = 1000 / this.fps;
+      // setInterval fires reliably even when rAF is throttled (e.g. webkit under xvfb)
       this.intervalId = setInterval(drawImage, frameInterval);
     }
   }
@@ -498,12 +546,10 @@ export class MediaMockClass {
   public enableDebugMode(): typeof MediaMock {
     this.debug = true;
 
-    if (
-      this.canvas != null &&
-      document.querySelector(this.mediaMockCanvasId) == null
-    ) {
-      this.canvas.style.border = "10px solid red";
-      document.body.append(this.canvas);
+    // The canvas is already attached to the DOM (hidden offscreen) by getMockStream.
+    // In debug mode we just flip it visible and add a red border.
+    if (this.canvas != null) {
+      this.applyVisibleCanvasStyles(this.canvas);
     }
 
     if (
@@ -518,30 +564,63 @@ export class MediaMockClass {
   }
 
   /**
-   * Removes the debug canvas and image from the body.
+   * Hides the source canvas again (keeps it in the DOM offscreen so captureStream
+   * keeps working) and removes any debug-only `<img>` element from the body.
    *
    * @public
    * @returns {typeof MediaMock}
    */
   public disableDebugMode(): typeof MediaMock {
     this.debug = false;
-    const canvas = document.getElementById(this.mediaMockCanvasId);
-    const image = document.getElementById(this.mediaMockImageId);
 
-    canvas?.remove();
-    image?.remove();
+    if (this.canvas != null) {
+      this.applyHiddenCanvasStyles(this.canvas);
+    }
 
-    // Also remove from stored references if they exist
+    const imageElement = document.getElementById(this.mediaMockImageId);
+    imageElement?.remove();
+
     if (this.currentImage?.parentNode) {
       this.currentImage.style.border = "";
       this.currentImage.remove();
     }
-    if (this.canvas?.parentNode) {
-      this.canvas.style.border = "";
-      this.canvas.remove();
-    }
 
     return this;
+  }
+
+  /**
+   * Positions the source canvas offscreen but keeps it at its natural drawing-
+   * buffer size so captureStream sees a non-zero rendering rectangle. On some
+   * webkit versions, shrinking the displayed canvas with CSS width/height causes
+   * the captured track's intrinsic dimensions to collapse — so we move it offscreen
+   * via `left: -9999px` instead of resizing it.
+   */
+  private applyHiddenCanvasStyles(canvas: HTMLCanvasElement): void {
+    canvas.style.position = "fixed";
+    canvas.style.top = "0";
+    canvas.style.left = "-9999px";
+    canvas.style.width = "";
+    canvas.style.height = "";
+    canvas.style.opacity = "0";
+    canvas.style.pointerEvents = "none";
+    canvas.style.border = "";
+    canvas.setAttribute("aria-hidden", "true");
+  }
+
+  /**
+   * Restores the source canvas to its natural size and makes it visible (used by
+   * debug mode).
+   */
+  private applyVisibleCanvasStyles(canvas: HTMLCanvasElement): void {
+    canvas.style.position = "";
+    canvas.style.top = "";
+    canvas.style.left = "";
+    canvas.style.width = "";
+    canvas.style.height = "";
+    canvas.style.opacity = "";
+    canvas.style.pointerEvents = "";
+    canvas.style.border = "10px solid red";
+    canvas.removeAttribute("aria-hidden");
   }
 
   public setMockedVideoTracksHandler(
@@ -641,6 +720,9 @@ export class MediaMockClass {
       this.currentVideo = undefined;
     }
     if (this.currentImage) {
+      if (this.currentImage.parentNode) {
+        this.currentImage.remove();
+      }
       this.currentImage.src = "";
       this.currentImage = undefined;
     }
@@ -685,12 +767,45 @@ export class MediaMockClass {
     return this;
   }
 
+  /**
+   * Set the timer strategy used for the canvas drawing loop.
+   *
+   * @public
+   * @param {TimerMode} mode - TimerMode.Auto | TimerMode.Raf | TimerMode.SetInterval
+   * @returns {typeof MediaMock}
+   */
+  public setTimerMode(mode: TimerMode): typeof MediaMock {
+    this.settings.timerMode = mode;
+    return this;
+  }
+
+  /**
+   * Resolves the effective timer mode. "auto" uses setInterval when the document
+   * is hidden (e.g. under xvfb where webkit throttles rAF), otherwise rAF.
+   */
+  private resolveTimerMode(): TimerMode.Raf | TimerMode.SetInterval {
+    if (this.settings.timerMode === TimerMode.Raf) return TimerMode.Raf;
+    if (this.settings.timerMode === TimerMode.SetInterval) return TimerMode.SetInterval;
+    // Auto: fall back to setInterval when the page may not be compositing
+    const pageHidden =
+      typeof document !== "undefined" &&
+      typeof document.hidden !== "undefined" &&
+      document.hidden;
+    return pageHidden || !isRAFSupported() ? TimerMode.SetInterval : TimerMode.Raf;
+  }
+
   private async getMockStream(
     constraints: MediaStreamConstraints,
   ): Promise<MediaStream> {
     this.resolution = this.getResolution(constraints, this.settings.device);
 
     this.fps = this.getFPSFromConstraints(constraints);
+
+    // Remove any prior canvas from the DOM before swapping in a new one (e.g. when
+    // a consumer calls getUserMedia again to switch cameras).
+    if (this.canvas?.parentNode) {
+      this.canvas.remove();
+    }
 
     this.canvas = document.createElement("canvas");
     this.canvas.id = this.mediaMockCanvasId;
@@ -707,6 +822,17 @@ export class MediaMockClass {
 
     this.ctx.fillStyle = "#ffffff";
     this.ctx.fillRect(0, 0, width, height);
+
+    // The canvas must live in the document for HTMLCanvasElement.captureStream() to
+    // produce a track whose intrinsic dimensions stay stable. On some browser
+    // versions (e.g. WebKit 26-class running under xvfb), a detached canvas
+    // produces a track whose videoWidth/videoHeight transiently report valid values
+    // and then drop to 2×2, breaking <video> consumers. Hidden offscreen by default;
+    // enableDebugMode() makes it visible.
+    this.applyHiddenCanvasStyles(this.canvas);
+    if (typeof document.body !== "undefined" && document.body !== null) {
+      document.body.append(this.canvas);
+    }
 
     await this.setMediaURL(this.settings.mediaURL);
     await this.startDrawingLoop();

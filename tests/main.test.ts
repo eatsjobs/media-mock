@@ -196,15 +196,27 @@ describe("MediaMock", () => {
     MediaMock.disableDebugMode();
   });
 
-  it("should not append debug elements when debug mode is disabled", async () => {
+  it("should keep the source canvas in the DOM but hidden when debug mode is disabled", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
     await MediaMock.setMediaURL(imageUrl);
 
     await navigator.mediaDevices.getUserMedia({ video: true });
 
-    expect.soft(document.querySelector("canvas")).toBeFalsy();
-    expect.soft(document.querySelector("img")).toBeFalsy();
+    // The canvas must stay attached to the document so captureStream produces a
+    // track with stable intrinsic dimensions. It should not be visible.
+    const canvas = document.querySelector("canvas");
+    expect(canvas).toBeTruthy();
+    expect((canvas as HTMLCanvasElement).style.opacity).toBe("0");
+    expect((canvas as HTMLCanvasElement).getAttribute("aria-hidden")).toBe(
+      "true",
+    );
+    // The source image is also kept in the DOM offscreen to prevent webkit from
+    // evicting its decoded pixel data from GPU memory between draws.
+    const img = document.querySelector("img") as HTMLImageElement | null;
+    expect(img).toBeTruthy();
+    expect(img?.style.opacity).toBe("0");
+    expect(img?.getAttribute("aria-hidden")).toBe("true");
   });
 
   it("should create mediaDevice correctly", async () => {
@@ -746,17 +758,26 @@ describe("MediaMock", () => {
     MediaMock.enableDebugMode().mock(device);
     await MediaMock.setMediaURL(imageUrl);
 
-    // Should have debug elements after getting stream
+    // The canvas is always attached after the first stream so captureStream stays
+    // stable; debug mode controls whether it is visually rendered.
     await navigator.mediaDevices.getUserMedia({ video: true });
-    expect(document.querySelector("canvas")).toBeTruthy();
+    let canvas = document.querySelector("canvas") as HTMLCanvasElement | null;
+    expect(canvas).toBeTruthy();
+    expect(canvas?.style.border).toContain("red");
+    expect(canvas?.getAttribute("aria-hidden")).toBeNull();
 
-    // Disable debug mode should remove elements
+    // Disabling debug mode hides the canvas but keeps it in the DOM
     MediaMock.disableDebugMode();
-    expect(document.querySelector("canvas")).toBeFalsy();
+    canvas = document.querySelector("canvas") as HTMLCanvasElement | null;
+    expect(canvas).toBeTruthy();
+    expect(canvas?.style.opacity).toBe("0");
+    expect(canvas?.getAttribute("aria-hidden")).toBe("true");
 
-    // Re-enable should not add them back immediately
+    // Re-enabling makes it visible again without needing a fresh stream
     MediaMock.enableDebugMode();
-    // Elements won't reappear until next stream
+    canvas = document.querySelector("canvas") as HTMLCanvasElement | null;
+    expect(canvas?.style.border).toContain("red");
+    expect(canvas?.getAttribute("aria-hidden")).toBeNull();
   });
 
   // ===== RESOLUTION EDGE CASE TESTS =====
@@ -1652,6 +1673,62 @@ describe("MediaMock", () => {
 
       expect(settings.width).toBeGreaterThan(0);
       expect(settings.height).toBeGreaterThan(0);
+    });
+  });
+
+  describe("captureStream produces a video element with stable dimensions", () => {
+    // Regression guard: in earlier versions the canvas wasn't attached to the DOM,
+    // and on some browsers (notably WebKit 26-class under xvfb) the resulting
+    // captureStream track would briefly report valid videoWidth/videoHeight on the
+    // consuming <video> element and then drop them to 2×2 — breaking consumers
+    // that read intrinsic dimensions to set up frame processing.
+
+    it("should produce a <video> element whose intrinsic dimensions match the canvas", async () => {
+      const device = getDeviceForBrowser();
+      MediaMock.mock(device);
+      await MediaMock.setMediaURL(imageUrl);
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 640, height: 480 },
+      });
+
+      const videoElement = document.createElement("video");
+      videoElement.muted = true;
+      videoElement.autoplay = true;
+      videoElement.playsInline = true;
+      videoElement.srcObject = stream;
+      document.body.append(videoElement);
+
+      try {
+        // Wait for metadata + at least one frame
+        await new Promise<void>((resolve, reject) => {
+          const timeoutId = window.setTimeout(
+            () => reject(new Error("loadedmetadata timeout")),
+            5000,
+          );
+          videoElement.addEventListener(
+            "loadedmetadata",
+            () => {
+              window.clearTimeout(timeoutId);
+              resolve();
+            },
+            { once: true },
+          );
+        });
+
+        expect(videoElement.videoWidth).toBeGreaterThan(2);
+        expect(videoElement.videoHeight).toBeGreaterThan(2);
+
+        // Check again ~100ms later — the bug we're guarding against was a race where
+        // dimensions briefly reported valid values then reverted to 2×2.
+        await new Promise<void>((resolve) => {
+          window.setTimeout(() => resolve(), 100);
+        });
+        expect(videoElement.videoWidth).toBeGreaterThan(2);
+        expect(videoElement.videoHeight).toBeGreaterThan(2);
+      } finally {
+        videoElement.remove();
+      }
     });
   });
 });
