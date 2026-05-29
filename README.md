@@ -20,10 +20,17 @@ Can also be used as browser extension please have a look at this repo [https://g
 - [Installation](#installation)
   - [CDN](#cdn)
 - [Usage](#usage)
+  - [Configuring a Custom Device and Constraints](#configuring-a-custom-device-and-constraints)
+  - [Configuring Media Load Timeout](#configuring-media-load-timeout)
+  - [Controlling the Drawing Timer (headless/CI)](#controlling-the-drawing-timer-headlessci)
+  - [Creating Custom Mock Devices](#creating-custom-mock-devices)
 - [API Documentation](#api-documentation)
   - [MediaMock](#mediamock)
+  - [TimerMode](#timermode)
+  - [createMediaDeviceInfo](#createmediadeviceinfo)
   - [Settings](#settings)
   - [MockOptions](#mockoptions)
+  - [DeviceConfig](#deviceconfig)
 - [Debugging](#debugging)
 
 ---
@@ -35,6 +42,8 @@ Can also be used as browser extension please have a look at this repo [https://g
 - **Canvas-based Mock Stream**: Use an image as a video input source and capture it as a canvas stream.
 - **Debug Mode**: Visualize the mock stream by displaying the canvas and image in the DOM.
 - **Easy Integration with Testing**: Ideal for testing media applications with tools like Vitest, Jest or Playwright.
+- **Headless-Friendly Timer Modes**: Choose how frames are pushed to the stream (`requestAnimationFrame`, `setInterval`, or automatic) for reliable capture under headless / virtual displays (e.g. `xvfb`).
+- **Custom Mock Devices**: Build your own `MediaDeviceInfo` entries (with capabilities like `torch`, `zoom`, etc.) via `createMediaDeviceInfo`.
 
 ---
 
@@ -66,7 +75,7 @@ Include directly in your HTML via [jsDelivr](https://www.jsdelivr.com/) or [unpk
 <script src="https://cdn.jsdelivr.net/npm/@eatsjobs/media-mock"></script>
 
 <!-- Specific version -->
-<script src="https://cdn.jsdelivr.net/npm/@eatsjobs/media-mock@1.2.1"></script>
+<script src="https://cdn.jsdelivr.net/npm/@eatsjobs/media-mock@1.3.1"></script>
 ```
 
 **unpkg**:
@@ -76,7 +85,7 @@ Include directly in your HTML via [jsDelivr](https://www.jsdelivr.com/) or [unpk
 <script src="https://unpkg.com/@eatsjobs/media-mock"></script>
 
 <!-- Specific version -->
-<script src="https://unpkg.com/@eatsjobs/media-mock@1.2.1"></script>
+<script src="https://unpkg.com/@eatsjobs/media-mock@1.3.1"></script>
 ```
 
 When loaded via CDN, `MediaMock` and `devices` are available on the global `window.MediaMock` object:
@@ -148,6 +157,49 @@ MediaMock
   .setCanvasScaleFactor(0.8);
 ```
 
+## Controlling the Drawing Timer (headless/CI)
+
+The mock stream is produced by drawing the source image/video onto a canvas in a loop and capturing it with `captureStream()`. The `TimerMode` setting controls which timer drives that loop:
+
+- `TimerMode.Auto` — uses `setInterval` when `requestAnimationFrame` may be throttled (detected via `document.hidden`), otherwise uses `requestAnimationFrame`.
+- `TimerMode.Raf` — always uses `requestAnimationFrame`.
+- `TimerMode.SetInterval` — always uses `setInterval`. This is the **default**, and the most reliable choice in headless / virtual-display environments (e.g. `xvfb`), where some browsers throttle `requestAnimationFrame` for inactive pages and `captureStream` stops emitting frames.
+
+```typescript
+import { MediaMock, TimerMode, devices } from "@eatsjobs/media-mock";
+
+MediaMock
+  .setTimerMode(TimerMode.SetInterval) // default — robust in headless CI
+  .mock(devices["iPhone 12"]);
+
+await MediaMock.setMediaURL("./assets/640x480-sample.png");
+```
+
+## Creating Custom Mock Devices
+
+Beyond the built-in presets (`iPhone 12`, `Samsung Galaxy M53`, `Mac Desktop`), you can build your own `MediaDeviceInfo` entries with `createMediaDeviceInfo` and add them at runtime with `addMockDevice`. This is useful for simulating specific capabilities such as `torch` or `zoom`.
+
+```typescript
+import { MediaMock, createMediaDeviceInfo, devices } from "@eatsjobs/media-mock";
+
+MediaMock.mock(devices["iPhone 12"]);
+
+const extraCamera = createMediaDeviceInfo({
+  deviceId: "my-custom-camera",
+  groupId: "my-group",
+  kind: "videoinput",
+  label: "Custom Telephoto Camera",
+  mockCapabilities: {
+    width: { min: 1, max: 4032 },
+    height: { min: 1, max: 3024 },
+    torch: true,
+    zoom: { min: 1, max: 10 },
+  },
+});
+
+MediaMock.addMockDevice(extraCamera); // fires a `devicechange` event
+```
+
 ## API Documentation
 
 ### `MediaMock`
@@ -180,6 +232,12 @@ Sets the timeout for media loading (both images and videos) in milliseconds. Thi
 
 - **timeoutMs**: `number` - Timeout in milliseconds. Must be a positive number. Default is 60000 (60 seconds).
 
+#### `setTimerMode(mode: TimerMode): MediaMock`
+
+Sets the timer strategy used for the canvas drawing loop that feeds `captureStream`. See [TimerMode](#timermode) for the available modes and when to use each. Defaults to `TimerMode.SetInterval`.
+
+- **mode**: `TimerMode` - One of `TimerMode.Auto`, `TimerMode.Raf`, or `TimerMode.SetInterval`.
+
 #### `addMockDevice(device: MockMediaDeviceInfo): MediaMock`
 
 Adds a new mock device to the current device configuration and triggers a `devicechange` event.
@@ -211,6 +269,59 @@ Restores original `navigator.mediaDevices` methods by removing the mock properti
 
 ---
 
+### `TimerMode`
+
+Enum controlling which timer drives the canvas drawing loop behind `captureStream`. Set it via [`setTimerMode`](#settimermodemode-timermode-mediamock).
+
+```typescript
+enum TimerMode {
+  Auto = "auto",
+  Raf = "raf",
+  SetInterval = "setInterval",
+}
+```
+
+- **`Auto`** - Uses `setInterval` when `requestAnimationFrame` may be throttled (detected via `document.hidden`), otherwise `requestAnimationFrame`.
+- **`Raf`** - Always uses `requestAnimationFrame`.
+- **`SetInterval`** - Always uses `setInterval`. **Default.** Most reliable in headless / virtual-display environments (e.g. `xvfb`), where `requestAnimationFrame` may be throttled and `captureStream` stops emitting frames.
+
+---
+
+### `createMediaDeviceInfo`
+
+Factory for building a custom `MockMediaDeviceInfo`, suitable for `addMockDevice` or for assembling a custom [`DeviceConfig`](#deviceconfig).
+
+```typescript
+function createMediaDeviceInfo(options: {
+  deviceId: string;
+  groupId: string;
+  kind: MediaDeviceKind;
+  label: string;
+  mockCapabilities?: EnhancedMediaTrackCapabilities;
+}): MockMediaDeviceInfo;
+```
+
+- **deviceId**: `string` - Unique device identifier.
+- **groupId**: `string` - Group identifier (devices sharing physical hardware share a group).
+- **kind**: `MediaDeviceKind` - e.g. `"videoinput"`, `"audioinput"`, `"audiooutput"`.
+- **label**: `string` - Human-readable device label.
+- **mockCapabilities**: `EnhancedMediaTrackCapabilities` *(optional)* - Capabilities returned by the device's `getCapabilities()`. Defaults to `{ width: { min: 1, max: 1280 }, height: { min: 1, max: 720 } }`.
+
+`EnhancedMediaTrackCapabilities` extends the standard `MediaTrackCapabilities` with commonly mocked extras:
+
+```typescript
+interface EnhancedMediaTrackCapabilities extends MediaTrackCapabilities {
+  whiteBalanceMode?: string[];
+  focusDistance?: { min: number };
+  zoom?: { max: number; min: number };
+  torch?: boolean;
+  backgroundBlur?: boolean[];
+  resizeMode?: string[];
+}
+```
+
+---
+
 ### `MockOptions`
 
 Defines which `navigator.mediaDevices` methods should be mocked:
@@ -238,6 +349,7 @@ Interface that contains the mock settings for media URL, device configuration, a
 - **constraints**: `MediaTrackConstraints` - Specifies video constraints, like resolution and frame rate.
 - **canvasScaleFactor**: `number` - Scale factor for the image in the canvas (0.1-1.0).
 - **mediaTimeout**: `number` - Timeout for media loading in milliseconds (default: 60000 = 60 seconds). Applied to both images and videos.
+- **timerMode**: `TimerMode` - Timer strategy for the canvas drawing loop (default: `TimerMode.SetInterval`). See [TimerMode](#timermode).
 
 ---
 
@@ -256,7 +368,7 @@ interface DeviceConfig {
 }
 
 interface MockMediaDeviceInfo extends MediaDeviceInfo {
-  getCapabilities: () => MediaTrackCapabilities;
+  getCapabilities: () => EnhancedMediaTrackCapabilities;
 }
 
 ```
