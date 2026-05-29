@@ -24,6 +24,7 @@
     "ui-testing"
   ],
   "license": "MIT",
+  "packageManager": "pnpm@11.3.0",
   "umd:main": "./dist/media-mock.umd.min.js",
   "unpkg": "./dist/media-mock.umd.min.js",
   "jsdelivr": "./dist/media-mock.umd.min.js",
@@ -61,8 +62,8 @@
     "test-coverage": "vitest --run --coverage",
     "changeset": "changeset",
     "version-packages": "changeset version",
-    "release": "npm run build && npx changeset publish --provenance",
-    "check-types": "npx attw $(npm pack) --profile=node16"
+    "release": "pnpm run build && pnpm exec changeset publish --provenance",
+    "check-types": "pnpm exec attw $(pnpm pack | tail -1) --profile=node16"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "~0.18.2",
@@ -81,7 +82,7 @@
     "vitest": "^3.2.4"
   },
   "engines": {
-    "npm": ">=7.0.0",
+    "pnpm": ">=9.0.0",
     "node": ">=16.0.0"
   }
 }
