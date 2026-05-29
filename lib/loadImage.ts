@@ -3,6 +3,11 @@ export async function loadImage(
   timeoutMs: number = 60 * 1000,
 ): Promise<HTMLImageElement> {
   const image = new Image();
+  // Request the image with CORS so a cross-origin source (e.g. a CDN) does not
+  // taint the capture canvas — a tainted canvas makes drawImage/captureStream
+  // throw a SecurityError. Mirrors the video path in main.ts. Harmless for
+  // same-origin and data: URLs; must be set before `src`.
+  image.crossOrigin = "anonymous";
 
   const timeout = new Promise<never>((_, reject) =>
     setTimeout(

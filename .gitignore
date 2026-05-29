@@ -13,6 +13,10 @@ dist-ssr
 *.local
 coverage/
 
+# Vitest browser-mode test artifacts (generated on failure)
+tests/__screenshots__/
+.vitest-attachments/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

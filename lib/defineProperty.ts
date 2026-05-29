@@ -15,7 +15,7 @@ export function defineProperty<T extends Record<string | symbol | number, any>>(
 
   // Check if the property is configurable (WebKit might block this)
   const descriptor = Object.getOwnPropertyDescriptor(targetObject, property);
-  const isConfigurable = !descriptor || descriptor.configurable !== false;
+  const isConfigurable = descriptor?.configurable !== false;
 
   if (!isConfigurable) {
     console.warn(
@@ -96,7 +96,8 @@ export function defineProperty<T extends Record<string | symbol | number, any>>(
         configurable: true,
         value: original,
       });
-    } catch (error) {
+    } catch (_error: unknown) {
+      console.warn(_error);
       // Fallback: Try direct assignment for restoration
       try {
         targetObject[property] = original as T[keyof T];
