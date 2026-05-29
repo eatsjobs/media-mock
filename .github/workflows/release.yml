@@ -63,12 +63,22 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22.x'
+          # Node >= 22.14 is required for npm OIDC trusted publishing
+          node-version: '24'
           cache: 'pnpm'
+
+      # Trusted publishing (OIDC) requires npm CLI >= 11.5.1, which is newer
+      # than the npm bundled with Node. changeset publish shells out to this
+      # global npm, so it must be upgraded here.
+      - name: Upgrade npm for OIDC trusted publishing
+        run: npm install -g npm@latest
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # No NPM_TOKEN: authentication is handled by OIDC trusted publishing.
+      # The npm CLI detects the GitHub Actions OIDC environment automatically
+      # and exchanges the id-token for a short-lived publish credential.
       - name: Create Release Pull Request or Publish to npm
         id: changesets
         uses: changesets/action@v1
@@ -78,7 +88,6 @@ jobs:
           commit: "chore: version bump"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
       
       - name: Publish on JSR 
         id: jsr-publish
