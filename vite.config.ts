@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { codecovVitePlugin } from "@codecov/vite-plugin";
+import { playwright } from "@vitest/browser-playwright";
 import dts from "vite-plugin-dts";
 import { defineConfig } from "vitest/config";
 
@@ -30,7 +31,7 @@ export default defineConfig(({ command }) => ({
     include: ["@vitest/coverage-v8/browser"],
   },
   build: {
-    minify: "esbuild",
+    minify: true,
     lib: {
       entry: "./lib/main.ts",
       name: "MediaMock",
@@ -48,11 +49,11 @@ export default defineConfig(({ command }) => ({
   },
   test: {
     globals: true,
+    isolate: true,
     browser: {
       enabled: true,
-      provider: "playwright",
+      provider: playwright(),
       headless: true,
-      isolate: true,
       instances: process.env.CI
         ? [
             // In CI, only run Chromium for speed and reliability
