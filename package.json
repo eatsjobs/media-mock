@@ -62,7 +62,7 @@
     "test-coverage": "vitest --run --coverage",
     "changeset": "changeset",
     "version-packages": "changeset version",
-    "release": "pnpm run build && pnpm exec changeset publish --provenance",
+    "release": "pnpm run build && pnpm exec changeset publish",
     "check-types": "pnpm exec attw $(pnpm pack | tail -1) --profile=node16"
   },
   "devDependencies": {
