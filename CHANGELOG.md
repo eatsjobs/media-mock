@@ -1,5 +1,12 @@
 # @eatsjobs/media-mock
 
+## 1.3.2
+
+### Patch Changes
+
+- 5f9c2bb: Fill the documentation gap
+- 5b91c60: Set `crossOrigin = "anonymous"` on images loaded via `setMediaURL`. Cross-origin sources (e.g. a CDN) previously tainted the capture canvas, causing `captureStream()`/`drawImage` to throw a `SecurityError`. This mirrors the existing behavior of the video source path.
+
 ## 1.3.1
 
 ### Patch Changes
