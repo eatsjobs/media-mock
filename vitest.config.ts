@@ -1,49 +1,8 @@
-import fs from "node:fs/promises";
-import path from "node:path";
-import { codecovVitePlugin } from "@codecov/vite-plugin";
 import { playwright } from "@vitest/browser-playwright";
-import dts from "vite-plugin-dts";
 import { defineConfig } from "vitest/config";
 
-const outDir = "dist";
-// Plugin to duplicate .d.ts to .d.cts
-function duplicateDTSPlugin() {
-  return {
-    name: "duplicate-dts",
-    closeBundle: async () => {
-      // This is a workaround to create a .d.cts
-      // file for the cjs format and have types working
-      // also with commonjs
-      try {
-        const dtsPath = path.resolve(outDir, "main.d.ts");
-        const dctsPath = path.resolve(outDir, "main.d.cts");
-        await fs.copyFile(dtsPath, dctsPath);
-        console.log("Successfully created .d.cts file");
-      } catch (error) {
-        console.error("Error creating .d.cts file:", error);
-      }
-    },
-  };
-}
-
-export default defineConfig(({ command }) => ({
-  build: {
-    minify: true,
-    lib: {
-      entry: "./lib/main.ts",
-      name: "MediaMock",
-      fileName: (format) => {
-        if (format === "umd") return "media-mock.umd.min.js";
-        if (format === "cjs") return "media-mock.cjs";
-        return "media-mock.js";
-      },
-      formats: ["es", "cjs", "umd"],
-    },
-    rollupOptions: {
-      external: ["**.test.ts", "**.test.tsx", "**.spec.ts", "**.spec.tsx"],
-    },
-    outDir: outDir, // You can change this to any directory
-  },
+// Test-only config. The library itself is bundled by tsdown (tsdown.config.ts).
+export default defineConfig({
   test: {
     globals: true,
     isolate: true,
@@ -107,25 +66,8 @@ export default defineConfig(({ command }) => ({
     testTimeout: process.env.CI ? 45000 : 30000,
     hookTimeout: process.env.CI ? 45000 : 30000,
     teardownTimeout: process.env.CI ? 15000 : 10000,
-    forceRerunTriggers: ["**/vite.config.*"],
+    forceRerunTriggers: ["**/vitest.config.*"],
   },
-  publicDir: command === "build" ? false : "public", // Don't copy public assets to dist for library builds, but allow for dev/test
-  plugins: [
-    dts({
-      insertTypesEntry: true,
-      rollupTypes: true,
-      bundledPackages: [],
-      compilerOptions: {
-        declaration: true,
-        declarationMap: true,
-        emitDeclarationOnly: true,
-      },
-    }),
-    ...(command === "build" ? [duplicateDTSPlugin()] : []),
-    codecovVitePlugin({
-      enableBundleAnalysis: process.env.CODECOV_TOKEN !== undefined,
-      bundleName: "@eatsjobs/media-mock",
-      uploadToken: process.env.CODECOV_TOKEN,
-    }),
-  ],
-}));
+  // Serves tests/assets fixtures; not copied anywhere by the library build.
+  publicDir: "public",
+});

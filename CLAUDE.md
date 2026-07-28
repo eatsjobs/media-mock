@@ -62,17 +62,22 @@ pnpm check-types
 
 - **Framework**: Vitest with `@vitest/browser` using Playwright
 - **Browser**: Chromium (headless by default)
-- **Test files**: `tests/main.test.ts`, `tests/regressions.test.ts`, `tests/loadImage.test.ts`
+- **Test files**: `tests/main.test.ts`, `tests/regressions.test.ts`, `tests/getUserMediaError.test.ts`, `tests/createGetUserMediaError.test.ts`, `tests/loadImage.test.ts`
+- **Config**: `vitest.config.ts` (test-only; the library build lives in `tsdown.config.ts`)
 - **Coverage**: Uses Istanbul coverage provider with multiple reporters (text, lcov, json)
 
 The tests run in an actual browser environment, making them ideal for testing browser APIs like `navigator.mediaDevices`.
 
 ## Build Configuration
 
-- **Bundler**: Vite with multiple output formats (ES modules, CommonJS, UMD)
-- **TypeScript**: Generates both `.d.ts` and `.d.cts` declaration files
-- **Library name**: "MediaMock" for UMD builds
+- **Bundler**: [tsdown](https://tsdown.dev) (Rolldown-based), configured in `tsdown.config.ts`
+- **Output formats**: ES modules, CommonJS, UMD — `dist/main.js`, `dist/main.cjs`, `dist/main.umd.js`
+- **TypeScript**: tsdown emits self-contained `main.d.ts` and `main.d.cts`, so CJS and ESM consumers each resolve declarations matching their module format
+- **Validation**: every build runs `attw` and `publint` over the package (`attw` also available standalone via `pnpm check-types`, which requires `dist` to exist)
+- **Library name**: "MediaMock" (`globalName`) for the UMD build
 - **Entry point**: `lib/main.ts`
+
+Vite is no longer used for bundling. It still powers `pnpm dev` (on its defaults — there is no `vite.config.ts`) and Vitest, which is configured in `vitest.config.ts`.
 
 ## Key Implementation Details
 
