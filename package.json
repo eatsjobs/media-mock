@@ -25,9 +25,9 @@
   ],
   "license": "MIT",
   "packageManager": "pnpm@11.3.0",
-  "umd:main": "./dist/media-mock.umd.min.js",
-  "unpkg": "./dist/media-mock.umd.min.js",
-  "jsdelivr": "./dist/media-mock.umd.min.js",
+  "umd:main": "./dist/main.umd.js",
+  "unpkg": "./dist/main.umd.js",
+  "jsdelivr": "./dist/main.umd.js",
   "author": "@eatsjobs Pasquale Mangialavori",
   "type": "module",
   "sideEffects": false,
@@ -37,19 +37,19 @@
     "LICENSE",
     "CHANGELOG.md"
   ],
-  "main": "./dist/media-mock.cjs",
-  "module": "./dist/media-mock.js",
+  "main": "./dist/main.cjs",
+  "module": "./dist/main.js",
   "types": "./dist/main.d.ts",
   "exports": {
     "./package.json": "./package.json",
     ".": {
       "import": {
         "types": "./dist/main.d.ts",
-        "default": "./dist/media-mock.js"
+        "default": "./dist/main.js"
       },
       "require": {
         "types": "./dist/main.d.cts",
-        "default": "./dist/media-mock.cjs"
+        "default": "./dist/main.cjs"
       }
     }
   },
@@ -57,29 +57,29 @@
     "lint": "biome check",
     "lint:fix": "biome check --fix",
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "tsc && tsdown",
     "test": "vitest --run",
     "test-coverage": "vitest --run --coverage",
     "changeset": "changeset",
     "version-packages": "changeset version",
     "release": "pnpm run build && pnpm exec changeset publish",
-    "check-types": "pnpm exec attw $(pnpm pack | tail -1) --profile=node16"
+    "check-types": "attw --pack . --profile node16"
   },
   "devDependencies": {
-    "@arethetypeswrong/core": "~0.18.2",
-    "@arethetypeswrong/cli": "~0.18.2",
+    "@arethetypeswrong/cli": "~0.18.5",
+    "@arethetypeswrong/core": "~0.18.5",
     "@biomejs/biome": "2.4.16",
     "@changesets/cli": "^2.29.7",
-    "@codecov/vite-plugin": "^2.0.1",
     "@types/node": "^25.9.1",
     "@vitest/browser": "^4.1.7",
     "@vitest/browser-playwright": "^4.1.7",
     "@vitest/coverage-istanbul": "^4.1.7",
     "@vitest/ui": "^4.1.7",
     "playwright": "^1.60.0",
+    "publint": "^0.3.22",
+    "tsdown": "^0.22.14",
     "typescript": "~6.0.3",
     "vite": "^8.0.14",
-    "vite-plugin-dts": "^5.0.1",
     "vitest": "^4.1.7"
   },
   "engines": {
