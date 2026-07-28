@@ -14,7 +14,6 @@ This is `@eatsjobs/media-mock`, a JavaScript library that simulates media device
 - **Device configs**: `lib/devices.ts` - Predefined device configurations (iPhone 12, Samsung Galaxy M53, Mac Desktop)
 - **Media device info**: `lib/createMediaDeviceInfo.ts` - Creates mock `MediaDeviceInfo` objects
 - **Image loading**: `lib/loadImage.ts` - Handles loading image assets for video simulation
-- **Property definition**: `lib/defineProperty.ts` - Utility for mocking browser APIs
 
 ### Key Concepts
 
@@ -64,7 +63,7 @@ pnpm check-types
 - **Framework**: Vitest with `@vitest/browser` using Playwright
 - **Browser**: Chromium (headless by default)
 - **Test file**: `tests/main.test.ts`
-- **Coverage**: Uses V8 coverage provider with multiple reporters (text, lcov, json)
+- **Coverage**: Uses Istanbul coverage provider with multiple reporters (text, lcov, json)
 
 The tests run in an actual browser environment, making them ideal for testing browser APIs like `navigator.mediaDevices`.
 

@@ -3,10 +3,23 @@ import {
   type MockMediaDeviceInfo,
 } from "./createMediaDeviceInfo";
 
-const defaultSupportedConstraints: Record<
-  keyof MediaTrackSupportedConstraints & "torch",
-  boolean
-> = {
+/**
+ * Which constraint names the mocked device reports as supported via
+ * getSupportedConstraints(). Mirrors MediaTrackSupportedConstraints plus
+ * common non-standard extras (torch, zoom, whiteBalanceMode, volume).
+ */
+export type SupportedConstraints = Partial<
+  Record<
+    | keyof MediaTrackSupportedConstraints
+    | "torch"
+    | "volume"
+    | "whiteBalanceMode"
+    | "zoom",
+    boolean
+  >
+>;
+
+const defaultSupportedConstraints: SupportedConstraints = {
   aspectRatio: true,
   deviceId: true,
   displaySurface: true,
@@ -24,20 +37,14 @@ const defaultSupportedConstraints: Record<
   zoom: true,
 };
 
-const defaultSupportedConstraintsDesktop: Record<
-  keyof MediaTrackSupportedConstraints & "torch",
-  boolean
-> = {
+const defaultSupportedConstraintsDesktop: SupportedConstraints = {
   ...defaultSupportedConstraints,
   torch: false,
 };
 export interface DeviceConfig {
   videoResolutions: { width: number; height: number }[];
   mediaDeviceInfo: MockMediaDeviceInfo[];
-  supportedConstraints: Record<
-    keyof MediaTrackSupportedConstraints & "torch",
-    boolean
-  >;
+  supportedConstraints: SupportedConstraints;
 }
 
 type DeviceName = "iPhone 12" | "Samsung Galaxy M53" | "Mac Desktop";

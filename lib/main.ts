@@ -1,5 +1,9 @@
 import type { MockMediaDeviceInfo } from "./createMediaDeviceInfo";
-import { type DeviceConfig, devices } from "./devices";
+import {
+  type DeviceConfig,
+  devices,
+  type SupportedConstraints,
+} from "./devices";
 import { loadImage } from "./loadImage";
 
 export interface MockOptions {
@@ -49,7 +53,12 @@ export interface Settings {
    * @type {DeviceConfig}
    */
   device: DeviceConfig;
-  constraints: MediaTrackConstraints;
+
+  /**
+   * The constraint names reported by the mocked getSupportedConstraints().
+   * @type {SupportedConstraints}
+   */
+  constraints: SupportedConstraints;
 
   /**
    * Scale factor for the image in the canvas (0-1)
@@ -376,35 +385,25 @@ export class MediaMockClass {
       if (!this.ctx || !this.currentVideo) {
         return;
       }
-
-      const now = performance.now();
-
-      // Only draw if enough time has passed based on FPS
-      if (now - this.lastDrawTime >= frameInterval) {
-        this.ctx.clearRect(0, 0, width, height);
-        this.ctx.fillStyle = "#ffffff";
-        this.ctx.fillRect(0, 0, width, height);
-        this.ctx.drawImage(this.currentVideo, 0, 0, width, height);
-        this.lastDrawTime = now;
-      }
-
-      if (this.resolveTimerMode() === TimerMode.Raf && isRAFSupported()) {
-        this.rafId = requestAnimationFrame(drawFrame);
-      }
+      this.ctx.clearRect(0, 0, width, height);
+      this.ctx.fillStyle = "#ffffff";
+      this.ctx.fillRect(0, 0, width, height);
+      this.ctx.drawImage(this.currentVideo, 0, 0, width, height);
     };
 
     if (this.resolveTimerMode() === TimerMode.Raf && isRAFSupported()) {
-      this.rafId = requestAnimationFrame(drawFrame);
-    } else {
-      this.intervalId = setInterval(() => {
-        if (!this.ctx || !this.currentVideo) {
-          return;
+      // rAF fires at display rate; throttle draws to the requested FPS
+      const rafLoop = () => {
+        const now = performance.now();
+        if (now - this.lastDrawTime >= frameInterval) {
+          drawFrame();
+          this.lastDrawTime = now;
         }
-        this.ctx.clearRect(0, 0, width, height);
-        this.ctx.fillStyle = "#ffffff";
-        this.ctx.fillRect(0, 0, width, height);
-        this.ctx.drawImage(this.currentVideo, 0, 0, width, height);
-      }, frameInterval);
+        this.rafId = requestAnimationFrame(rafLoop);
+      };
+      this.rafId = requestAnimationFrame(rafLoop);
+    } else {
+      this.intervalId = setInterval(drawFrame, frameInterval);
     }
   }
 
@@ -1150,7 +1149,6 @@ export class MediaMockClass {
       (res) => res.width === targetWidth && res.height === targetHeight,
     );
 
-    // whatever
     if (directMatch) {
       // If we have direct match but in portrait mode and it's landscape resolution, swap it
       if (isPortrait && directMatch.width > directMatch.height) {
@@ -1240,5 +1238,5 @@ export class MediaMockClass {
 }
 
 export * from "./createMediaDeviceInfo";
-export { type DeviceConfig, devices };
+export { type DeviceConfig, devices, type SupportedConstraints };
 export const MediaMock: MediaMockClass = new MediaMockClass();
