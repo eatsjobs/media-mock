@@ -218,7 +218,7 @@ Enables debug mode, appending the mock canvas and image elements to the DOM for 
 
 #### `disableDebugMode(): MediaMock`
 
-Disables debug mode and removes the mock canvas and image elements from the DOM.
+Disables debug mode, hiding the mock canvas and image again. Both stay attached to the DOM offscreen — the canvas so `captureStream()` keeps producing frames, the image so webkit doesn't evict its decoded pixel data.
 
 #### `setCanvasScaleFactor(factor: number): MediaMock`
 
@@ -346,7 +346,7 @@ Interface that contains the mock settings for media URL, device configuration, a
 
 - **mediaURL**: `string` - The URL of the image or video used as the media source.
 - **device**: `DeviceConfig` - Specifies the configuration for the mock device, such as resolution and media information.
-- **constraints**: `MediaTrackConstraints` - Specifies video constraints, like resolution and frame rate.
+- **constraints**: `SupportedConstraints` - The constraint names reported by the mocked `getSupportedConstraints()`. Kept in sync with the mocked device by `mock()`.
 - **canvasScaleFactor**: `number` - Scale factor for the image in the canvas (0.1-1.0).
 - **mediaTimeout**: `number` - Timeout for media loading in milliseconds (default: 60000 = 60 seconds). Applied to both images and videos.
 - **timerMode**: `TimerMode` - Timer strategy for the canvas drawing loop (default: `TimerMode.SetInterval`). See [TimerMode](#timermode).
@@ -361,11 +361,19 @@ Represents configuration settings for mock devices, including available video re
 interface DeviceConfig {
   videoResolutions: { width: number; height: number }[];
   mediaDeviceInfo: MockMediaDeviceInfo[];
-  supportedConstraints: Record<
-    keyof MediaTrackSupportedConstraints & "torch",
-    boolean
-  >;
+  supportedConstraints: SupportedConstraints;
 }
+
+type SupportedConstraints = Partial<
+  Record<
+    | keyof MediaTrackSupportedConstraints
+    | "torch"
+    | "volume"
+    | "whiteBalanceMode"
+    | "zoom",
+    boolean
+  >
+>;
 
 interface MockMediaDeviceInfo extends MediaDeviceInfo {
   getCapabilities: () => EnhancedMediaTrackCapabilities;

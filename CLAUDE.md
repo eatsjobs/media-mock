@@ -62,7 +62,7 @@ pnpm check-types
 
 - **Framework**: Vitest with `@vitest/browser` using Playwright
 - **Browser**: Chromium (headless by default)
-- **Test file**: `tests/main.test.ts`
+- **Test files**: `tests/main.test.ts`, `tests/regressions.test.ts`, `tests/loadImage.test.ts`
 - **Coverage**: Uses Istanbul coverage provider with multiple reporters (text, lcov, json)
 
 The tests run in an actual browser environment, making them ideal for testing browser APIs like `navigator.mediaDevices`.
