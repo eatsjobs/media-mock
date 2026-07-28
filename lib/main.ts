@@ -1,4 +1,12 @@
-import type { MockMediaDeviceInfo } from "./createMediaDeviceInfo";
+import {
+  createGetUserMediaError,
+  type GetUserMediaErrorName,
+  type SimulatedErrorOptions,
+} from "./createGetUserMediaError";
+import {
+  type MockMediaDeviceInfo,
+  redactMediaDeviceInfo,
+} from "./createMediaDeviceInfo";
 import {
   type DeviceConfig,
   devices,
@@ -56,6 +64,7 @@ export interface Settings {
 
   /**
    * The constraint names reported by the mocked getSupportedConstraints().
+   * Kept in sync with the mocked device by mock().
    * @type {SupportedConstraints}
    */
   constraints: SupportedConstraints;
@@ -289,6 +298,16 @@ export class MediaMockClass {
   };
 
   private lastDrawTime: number = 0;
+
+  /**
+   * The error every mocked getUserMedia call should reject with, or null to
+   * stream normally. Stored as name + options rather than an Error instance so
+   * each rejection constructs a fresh error, like real browsers do.
+   */
+  private simulatedGetUserMediaError: {
+    name: GetUserMediaErrorName;
+    options?: SimulatedErrorOptions;
+  } | null = null;
 
   /**
    * The Image or the video that will be used as source.
@@ -709,10 +728,7 @@ export class MediaMockClass {
     }
 
     if (options?.mediaDevices.enumerateDevices) {
-      patchProto(
-        "enumerateDevices",
-        async () => this.settings.device.mediaDeviceInfo,
-      );
+      patchProto("enumerateDevices", async () => this.enumerateMockDevices());
     }
 
     return this;
@@ -728,6 +744,7 @@ export class MediaMockClass {
     this.stopMockStream();
     this.disableDebugMode();
     this.mockedVideoTracksHandler = (tracks) => tracks;
+    this.simulatedGetUserMediaError = null;
     this.mapUnmockFunction.forEach((unmock) => {
       unmock();
     });
@@ -812,6 +829,49 @@ export class MediaMockClass {
   }
 
   /**
+   * Makes every subsequent `getUserMedia` call reject with the given error
+   * instead of returning a stream. Stays in effect until
+   * `clearGetUserMediaError()` or `unmock()` is called.
+   *
+   * @public
+   * @param {GetUserMediaErrorName} name - e.g. "NotAllowedError"
+   * @param {SimulatedErrorOptions} [options] - custom message, or the offending
+   * constraint name for "OverconstrainedError"
+   * @returns {typeof MediaMock}
+   */
+  public simulateGetUserMediaError(
+    name: GetUserMediaErrorName,
+    options?: SimulatedErrorOptions,
+  ): typeof MediaMock {
+    this.simulatedGetUserMediaError = { name, options };
+    return this;
+  }
+
+  /**
+   * Stops simulating a `getUserMedia` failure, so subsequent calls return a
+   * mock stream again.
+   *
+   * @public
+   * @returns {typeof MediaMock}
+   */
+  public clearGetUserMediaError(): typeof MediaMock {
+    this.simulatedGetUserMediaError = null;
+    return this;
+  }
+
+  /**
+   * The device list returned by the mocked enumerateDevices. While a
+   * "NotAllowedError" is simulated, entries are redacted instead of the call
+   * rejecting — that is what real browsers do before permission is granted.
+   */
+  private enumerateMockDevices(): MockMediaDeviceInfo[] {
+    if (this.simulatedGetUserMediaError?.name === "NotAllowedError") {
+      return this.settings.device.mediaDeviceInfo.map(redactMediaDeviceInfo);
+    }
+    return this.settings.device.mediaDeviceInfo;
+  }
+
+  /**
    * Resolves the effective timer mode. "auto" uses setInterval when the document
    * is hidden (e.g. under xvfb where webkit throttles rAF), otherwise rAF.
    */
@@ -832,6 +892,15 @@ export class MediaMockClass {
   private async getMockStream(
     constraints: MediaStreamConstraints,
   ): Promise<MediaStream> {
+    // Reject before touching the canvas or loading any media, like a real
+    // browser that fails permission or device selection up front.
+    if (this.simulatedGetUserMediaError !== null) {
+      throw createGetUserMediaError(
+        this.simulatedGetUserMediaError.name,
+        this.simulatedGetUserMediaError.options,
+      );
+    }
+
     this.resolution = this.getResolution(constraints, this.settings.device);
 
     this.fps = this.getFPSFromConstraints(constraints);
@@ -1273,5 +1342,11 @@ export class MediaMockClass {
 }
 
 export * from "./createMediaDeviceInfo";
-export { type DeviceConfig, devices, type SupportedConstraints };
+export {
+  type DeviceConfig,
+  devices,
+  type GetUserMediaErrorName,
+  type SimulatedErrorOptions,
+  type SupportedConstraints,
+};
 export const MediaMock: MediaMockClass = new MediaMockClass();

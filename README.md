@@ -23,10 +23,12 @@ Can also be used as browser extension please have a look at this repo [https://g
   - [Configuring a Custom Device and Constraints](#configuring-a-custom-device-and-constraints)
   - [Configuring Media Load Timeout](#configuring-media-load-timeout)
   - [Controlling the Drawing Timer (headless/CI)](#controlling-the-drawing-timer-headlessci)
+  - [Simulating Errors](#simulating-errors)
   - [Creating Custom Mock Devices](#creating-custom-mock-devices)
 - [API Documentation](#api-documentation)
   - [MediaMock](#mediamock)
   - [TimerMode](#timermode)
+  - [GetUserMediaErrorName](#getusermediaerrorname)
   - [createMediaDeviceInfo](#createmediadeviceinfo)
   - [Settings](#settings)
   - [MockOptions](#mockoptions)
@@ -44,6 +46,7 @@ Can also be used as browser extension please have a look at this repo [https://g
 - **Easy Integration with Testing**: Ideal for testing media applications with tools like Vitest, Jest or Playwright.
 - **Headless-Friendly Timer Modes**: Choose how frames are pushed to the stream (`requestAnimationFrame`, `setInterval`, or automatic) for reliable capture under headless / virtual displays (e.g. `xvfb`).
 - **Custom Mock Devices**: Build your own `MediaDeviceInfo` entries (with capabilities like `torch`, `zoom`, etc.) via `createMediaDeviceInfo`.
+- **Error Simulation**: Make `getUserMedia` reject with realistic errors (`NotAllowedError`, `NotFoundError`, `OverconstrainedError`, ...) to test permission-denied and no-camera paths.
 
 ---
 
@@ -175,6 +178,68 @@ MediaMock
 await MediaMock.setMediaURL("./assets/640x480-sample.png");
 ```
 
+## Simulating Errors
+
+Real apps have to handle a user denying camera permission, a machine with no camera, or a camera already in use by another application. `simulateGetUserMediaError` makes `getUserMedia` reject so those paths can be tested:
+
+```typescript
+import { MediaMock, devices } from "@eatsjobs/media-mock";
+
+MediaMock.mock(devices["iPhone 12"]);
+MediaMock.simulateGetUserMediaError("NotAllowedError");
+
+try {
+  await navigator.mediaDevices.getUserMedia({ video: true });
+} catch (error) {
+  console.log(error.name);    // "NotAllowedError"
+  console.log(error.message); // "Permission denied"
+}
+
+// Back to normal streaming
+MediaMock.clearGetUserMediaError();
+```
+
+The error stays in effect for every `getUserMedia` call until you clear it (`unmock()` clears it too). Each rejection is a fresh error instance, as in real browsers.
+
+Supported names, with the message each one defaults to:
+
+| Name | Default message | Typical cause |
+| --- | --- | --- |
+| `NotAllowedError` | `Permission denied` | User denied camera permission |
+| `NotFoundError` | `Requested device not found` | No device matches the constraints |
+| `NotReadableError` | `Could not start video source` | Camera busy or hardware/OS error |
+| `OverconstrainedError` | *(empty)* | Constraints cannot be satisfied |
+| `AbortError` | `Starting videoinput failed` | Device failed to start |
+| `SecurityError` | `MediaDevices access is not allowed in this context` | Blocked (e.g. insecure context) |
+
+Override the message, or name the offending constraint for `OverconstrainedError`:
+
+```typescript
+MediaMock.simulateGetUserMediaError("NotReadableError", {
+  message: "Camera is already in use by another app",
+});
+
+MediaMock.simulateGetUserMediaError("OverconstrainedError", {
+  constraint: "width",
+});
+```
+
+### enumerateDevices while permission is denied
+
+Real browsers do **not** reject `enumerateDevices()` when permission is missing — they resolve with redacted entries. While a `NotAllowedError` is simulated, the mock does the same: `kind` is preserved and `label`, `deviceId`, and `groupId` are empty strings.
+
+```typescript
+MediaMock.simulateGetUserMediaError("NotAllowedError");
+
+await navigator.mediaDevices.enumerateDevices();
+// [{ kind: "videoinput", label: "", deviceId: "", groupId: "" }, ...]
+
+MediaMock.clearGetUserMediaError();
+// labels and ids visible again
+```
+
+Other error names leave `enumerateDevices()` untouched.
+
 ## Creating Custom Mock Devices
 
 Beyond the built-in presets (`iPhone 12`, `Samsung Galaxy M53`, `Mac Desktop`), you can build your own `MediaDeviceInfo` entries with `createMediaDeviceInfo` and add them at runtime with `addMockDevice`. This is useful for simulating specific capabilities such as `torch` or `zoom`.
@@ -238,6 +303,18 @@ Sets the timer strategy used for the canvas drawing loop that feeds `captureStre
 
 - **mode**: `TimerMode` - One of `TimerMode.Auto`, `TimerMode.Raf`, or `TimerMode.SetInterval`.
 
+#### `simulateGetUserMediaError(name: GetUserMediaErrorName, options?): MediaMock`
+
+Makes every subsequent `getUserMedia` call reject with the given error instead of returning a stream, until [`clearGetUserMediaError`](#cleargetusermediaerror-mediamock) or `unmock()` is called. While `"NotAllowedError"` is simulated, `enumerateDevices()` also returns redacted entries — see [Simulating Errors](#simulating-errors).
+
+- **name**: `GetUserMediaErrorName` - The error to reject with, e.g. `"NotAllowedError"`.
+- **options.message**: `string` *(optional)* - Overrides the realistic default message for that error name.
+- **options.constraint**: `string` *(optional)* - `"OverconstrainedError"` only: the name of the constraint that could not be satisfied, e.g. `"width"`.
+
+#### `clearGetUserMediaError(): MediaMock`
+
+Stops simulating a `getUserMedia` failure, so subsequent calls return a mock stream again and `enumerateDevices()` reports full device info.
+
 #### `addMockDevice(device: MockMediaDeviceInfo): MediaMock`
 
 Adds a new mock device to the current device configuration and triggers a `devicechange` event.
@@ -284,6 +361,29 @@ enum TimerMode {
 - **`Auto`** - Uses `setInterval` when `requestAnimationFrame` may be throttled (detected via `document.hidden`), otherwise `requestAnimationFrame`.
 - **`Raf`** - Always uses `requestAnimationFrame`.
 - **`SetInterval`** - Always uses `setInterval`. **Default.** Most reliable in headless / virtual-display environments (e.g. `xvfb`), where `requestAnimationFrame` may be throttled and `captureStream` stops emitting frames.
+
+---
+
+### `GetUserMediaErrorName`
+
+The error names accepted by [`simulateGetUserMediaError`](#simulategetusermediaerrorname-getusermediaerrorname-options-mediamock). See [Simulating Errors](#simulating-errors) for the default message of each.
+
+```typescript
+type GetUserMediaErrorName =
+  | "NotAllowedError"
+  | "NotFoundError"
+  | "NotReadableError"
+  | "OverconstrainedError"
+  | "AbortError"
+  | "SecurityError";
+
+interface SimulatedErrorOptions {
+  message?: string;
+  constraint?: string;
+}
+```
+
+Rejections are `DOMException` instances carrying the requested `name`. `"OverconstrainedError"` uses the native `OverconstrainedError` constructor where the browser provides one (Chromium) and otherwise a `DOMException` with a `constraint` property, so `error.name` and `error.constraint` can be asserted on either.
 
 ---
 
