@@ -12,6 +12,27 @@ export interface MockMediaDeviceInfo extends MediaDeviceInfo {
 }
 
 /**
+ * Returns a copy of the device info with its identifying fields blanked out,
+ * the way browsers report devices before camera permission has been granted:
+ * `kind` is preserved, everything else is an empty string.
+ *
+ * @export
+ * @param {MockMediaDeviceInfo} device
+ * @returns {MockMediaDeviceInfo}
+ */
+export function redactMediaDeviceInfo(
+  device: MockMediaDeviceInfo,
+): MockMediaDeviceInfo {
+  return createMediaDeviceInfo({
+    deviceId: "",
+    groupId: "",
+    kind: device.kind,
+    label: "",
+    mockCapabilities: {},
+  });
+}
+
+/**
  * Creates a mock MediaDeviceInfo object.
  *
  * @export

@@ -27,9 +27,6 @@ function duplicateDTSPlugin() {
 }
 
 export default defineConfig(({ command }) => ({
-  optimizeDeps: {
-    include: ["@vitest/coverage-v8/browser"],
-  },
   build: {
     minify: true,
     lib: {

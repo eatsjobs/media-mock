@@ -1,5 +1,17 @@
-import type { MockMediaDeviceInfo } from "./createMediaDeviceInfo";
-import { type DeviceConfig, devices } from "./devices";
+import {
+  createGetUserMediaError,
+  type GetUserMediaErrorName,
+  type SimulatedErrorOptions,
+} from "./createGetUserMediaError";
+import {
+  type MockMediaDeviceInfo,
+  redactMediaDeviceInfo,
+} from "./createMediaDeviceInfo";
+import {
+  type DeviceConfig,
+  devices,
+  type SupportedConstraints,
+} from "./devices";
 import { loadImage } from "./loadImage";
 
 export interface MockOptions {
@@ -49,7 +61,13 @@ export interface Settings {
    * @type {DeviceConfig}
    */
   device: DeviceConfig;
-  constraints: MediaTrackConstraints;
+
+  /**
+   * The constraint names reported by the mocked getSupportedConstraints().
+   * Kept in sync with the mocked device by mock().
+   * @type {SupportedConstraints}
+   */
+  constraints: SupportedConstraints;
 
   /**
    * Scale factor for the image in the canvas (0-1)
@@ -92,7 +110,9 @@ function isVideoURL(url: string) {
     "rm",
     "vob",
   ];
-  const extension = url.split(".").pop()?.toLowerCase();
+  // Strip query string and fragment so "video.mp4?token=abc" still resolves
+  // to the "mp4" extension.
+  const extension = url.split(/[?#]/)[0].split(".").pop()?.toLowerCase();
   return videoExtensions.includes(extension ?? "");
 }
 
@@ -280,6 +300,16 @@ export class MediaMockClass {
   private lastDrawTime: number = 0;
 
   /**
+   * The error every mocked getUserMedia call should reject with, or null to
+   * stream normally. Stored as name + options rather than an Error instance so
+   * each rejection constructs a fresh error, like real browsers do.
+   */
+  private simulatedGetUserMediaError: {
+    name: GetUserMediaErrorName;
+    options?: SimulatedErrorOptions;
+  } | null = null;
+
+  /**
    * The Image or the video that will be used as source.
    * @public
    * @param {string} mediaURL
@@ -313,9 +343,11 @@ export class MediaMockClass {
       // the DOM prevents some webkit versions from evicting its decoded pixel data
       // from GPU memory, which would cause drawImage to produce blank frames.
       if (typeof document !== "undefined" && document.body) {
-        media.style.cssText =
-          "position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none";
-        media.setAttribute("aria-hidden", "true");
+        if (this.debug) {
+          this.applyVisibleImageStyles(media);
+        } else {
+          this.applyHiddenImageStyles(media);
+        }
         document.body.append(media);
       }
     } else if (media instanceof HTMLVideoElement) {
@@ -376,35 +408,25 @@ export class MediaMockClass {
       if (!this.ctx || !this.currentVideo) {
         return;
       }
-
-      const now = performance.now();
-
-      // Only draw if enough time has passed based on FPS
-      if (now - this.lastDrawTime >= frameInterval) {
-        this.ctx.clearRect(0, 0, width, height);
-        this.ctx.fillStyle = "#ffffff";
-        this.ctx.fillRect(0, 0, width, height);
-        this.ctx.drawImage(this.currentVideo, 0, 0, width, height);
-        this.lastDrawTime = now;
-      }
-
-      if (this.resolveTimerMode() === TimerMode.Raf && isRAFSupported()) {
-        this.rafId = requestAnimationFrame(drawFrame);
-      }
+      this.ctx.clearRect(0, 0, width, height);
+      this.ctx.fillStyle = "#ffffff";
+      this.ctx.fillRect(0, 0, width, height);
+      this.ctx.drawImage(this.currentVideo, 0, 0, width, height);
     };
 
     if (this.resolveTimerMode() === TimerMode.Raf && isRAFSupported()) {
-      this.rafId = requestAnimationFrame(drawFrame);
-    } else {
-      this.intervalId = setInterval(() => {
-        if (!this.ctx || !this.currentVideo) {
-          return;
+      // rAF fires at display rate; throttle draws to the requested FPS
+      const rafLoop = () => {
+        const now = performance.now();
+        if (now - this.lastDrawTime >= frameInterval) {
+          drawFrame();
+          this.lastDrawTime = now;
         }
-        this.ctx.clearRect(0, 0, width, height);
-        this.ctx.fillStyle = "#ffffff";
-        this.ctx.fillRect(0, 0, width, height);
-        this.ctx.drawImage(this.currentVideo, 0, 0, width, height);
-      }, frameInterval);
+        this.rafId = requestAnimationFrame(rafLoop);
+      };
+      this.rafId = requestAnimationFrame(rafLoop);
+    } else {
+      this.intervalId = setInterval(drawFrame, frameInterval);
     }
   }
 
@@ -551,20 +573,19 @@ export class MediaMockClass {
       this.applyVisibleCanvasStyles(this.canvas);
     }
 
-    if (
-      this.currentImage != null &&
-      document.querySelector(this.mediaMockImageId) == null
-    ) {
-      this.currentImage.style.border = "10px solid red";
-      document.body.append(this.currentImage);
+    if (this.currentImage != null) {
+      if (this.currentImage.parentNode == null && document.body) {
+        document.body.append(this.currentImage);
+      }
+      this.applyVisibleImageStyles(this.currentImage);
     }
 
     return this;
   }
 
   /**
-   * Hides the source canvas again (keeps it in the DOM offscreen so captureStream
-   * keeps working) and removes any debug-only `<img>` element from the body.
+   * Hides the source canvas and the source image again (both stay in the DOM
+   * offscreen so captureStream and webkit's decoded-pixel cache keep working).
    *
    * @public
    * @returns {typeof MediaMock}
@@ -576,15 +597,31 @@ export class MediaMockClass {
       this.applyHiddenCanvasStyles(this.canvas);
     }
 
-    const imageElement = document.getElementById(this.mediaMockImageId);
-    imageElement?.remove();
-
-    if (this.currentImage?.parentNode) {
-      this.currentImage.style.border = "";
-      this.currentImage.remove();
+    if (this.currentImage != null) {
+      this.applyHiddenImageStyles(this.currentImage);
     }
 
     return this;
+  }
+
+  /**
+   * Positions the source image offscreen and invisible while keeping it in the
+   * DOM — some webkit versions evict a detached image's decoded pixel data from
+   * GPU memory, which would make drawImage produce blank frames.
+   */
+  private applyHiddenImageStyles(image: HTMLImageElement): void {
+    image.style.cssText =
+      "position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none";
+    image.setAttribute("aria-hidden", "true");
+  }
+
+  /**
+   * Restores the source image to its natural size and makes it visible with a
+   * red border (used by debug mode).
+   */
+  private applyVisibleImageStyles(image: HTMLImageElement): void {
+    image.style.cssText = "border:10px solid red";
+    image.removeAttribute("aria-hidden");
   }
 
   /**
@@ -643,7 +680,15 @@ export class MediaMockClass {
     device: DeviceConfig,
     options: MockOptions = createDefaultMockOptions(),
   ): typeof MediaMock {
-    this.settings.device = device;
+    // Clone the config so addMockDevice/removeMockDevice never mutate the
+    // caller's object (the exported presets are shared across tests).
+    this.settings.device = {
+      ...device,
+      videoResolutions: device.videoResolutions.map((res) => ({ ...res })),
+      mediaDeviceInfo: [...device.mediaDeviceInfo],
+      supportedConstraints: { ...device.supportedConstraints },
+    };
+    this.settings.constraints = this.settings.device.supportedConstraints;
 
     if (typeof MediaDevices === "undefined") {
       console.warn(
@@ -660,11 +705,16 @@ export class MediaMockClass {
       key: keyof MockOptions["mediaDevices"],
       mockFn: AnyFn,
     ): void => {
-      const original = proto[key];
+      // Only capture the original on the first patch — on repeated mock() calls
+      // without unmock(), proto[key] is already our mock and saving it would
+      // permanently lose the native implementation.
+      if (!this.mapUnmockFunction.has(key)) {
+        const original = proto[key];
+        this.mapUnmockFunction.set(key, () => {
+          proto[key] = original;
+        });
+      }
       proto[key] = mockFn;
-      this.mapUnmockFunction.set(key, () => {
-        proto[key] = original;
-      });
     };
 
     if (options?.mediaDevices.getUserMedia) {
@@ -678,10 +728,7 @@ export class MediaMockClass {
     }
 
     if (options?.mediaDevices.enumerateDevices) {
-      patchProto(
-        "enumerateDevices",
-        async () => this.settings.device.mediaDeviceInfo,
-      );
+      patchProto("enumerateDevices", async () => this.enumerateMockDevices());
     }
 
     return this;
@@ -696,6 +743,8 @@ export class MediaMockClass {
   public unmock(): typeof MediaMock {
     this.stopMockStream();
     this.disableDebugMode();
+    this.mockedVideoTracksHandler = (tracks) => tracks;
+    this.simulatedGetUserMediaError = null;
     this.mapUnmockFunction.forEach((unmock) => {
       unmock();
     });
@@ -780,6 +829,49 @@ export class MediaMockClass {
   }
 
   /**
+   * Makes every subsequent `getUserMedia` call reject with the given error
+   * instead of returning a stream. Stays in effect until
+   * `clearGetUserMediaError()` or `unmock()` is called.
+   *
+   * @public
+   * @param {GetUserMediaErrorName} name - e.g. "NotAllowedError"
+   * @param {SimulatedErrorOptions} [options] - custom message, or the offending
+   * constraint name for "OverconstrainedError"
+   * @returns {typeof MediaMock}
+   */
+  public simulateGetUserMediaError(
+    name: GetUserMediaErrorName,
+    options?: SimulatedErrorOptions,
+  ): typeof MediaMock {
+    this.simulatedGetUserMediaError = { name, options };
+    return this;
+  }
+
+  /**
+   * Stops simulating a `getUserMedia` failure, so subsequent calls return a
+   * mock stream again.
+   *
+   * @public
+   * @returns {typeof MediaMock}
+   */
+  public clearGetUserMediaError(): typeof MediaMock {
+    this.simulatedGetUserMediaError = null;
+    return this;
+  }
+
+  /**
+   * The device list returned by the mocked enumerateDevices. While a
+   * "NotAllowedError" is simulated, entries are redacted instead of the call
+   * rejecting — that is what real browsers do before permission is granted.
+   */
+  private enumerateMockDevices(): MockMediaDeviceInfo[] {
+    if (this.simulatedGetUserMediaError?.name === "NotAllowedError") {
+      return this.settings.device.mediaDeviceInfo.map(redactMediaDeviceInfo);
+    }
+    return this.settings.device.mediaDeviceInfo;
+  }
+
+  /**
    * Resolves the effective timer mode. "auto" uses setInterval when the document
    * is hidden (e.g. under xvfb where webkit throttles rAF), otherwise rAF.
    */
@@ -800,6 +892,15 @@ export class MediaMockClass {
   private async getMockStream(
     constraints: MediaStreamConstraints,
   ): Promise<MediaStream> {
+    // Reject before touching the canvas or loading any media, like a real
+    // browser that fails permission or device selection up front.
+    if (this.simulatedGetUserMediaError !== null) {
+      throw createGetUserMediaError(
+        this.simulatedGetUserMediaError.name,
+        this.simulatedGetUserMediaError.options,
+      );
+    }
+
     this.resolution = this.getResolution(constraints, this.settings.device);
 
     this.fps = this.getFPSFromConstraints(constraints);
@@ -818,7 +919,7 @@ export class MediaMockClass {
     this.canvas.width = width;
     this.canvas.height = height;
 
-    this.ctx = this.canvas.getContext("2d");
+    this.ctx = this.canvas.getContext("2d", { willReadFrequently: true });
     if (!this.ctx) {
       throw new Error("Failed to get 2D canvas context");
     }
@@ -963,9 +1064,11 @@ export class MediaMockClass {
 
   private getFPSFromConstraints(constraints: MediaStreamConstraints): number {
     if (typeof constraints.video === "object" && constraints.video.frameRate) {
-      return typeof constraints.video.frameRate === "number"
-        ? constraints.video.frameRate
-        : constraints.video.frameRate.ideal || 30;
+      const frameRate = constraints.video.frameRate;
+      if (typeof frameRate === "number") {
+        return frameRate;
+      }
+      return frameRate.exact ?? frameRate.ideal ?? frameRate.max ?? 30;
     }
     return 30;
   }
@@ -1150,7 +1253,6 @@ export class MediaMockClass {
       (res) => res.width === targetWidth && res.height === targetHeight,
     );
 
-    // whatever
     if (directMatch) {
       // If we have direct match but in portrait mode and it's landscape resolution, swap it
       if (isPortrait && directMatch.width > directMatch.height) {
@@ -1240,5 +1342,11 @@ export class MediaMockClass {
 }
 
 export * from "./createMediaDeviceInfo";
-export { type DeviceConfig, devices };
+export {
+  type DeviceConfig,
+  devices,
+  type GetUserMediaErrorName,
+  type SimulatedErrorOptions,
+  type SupportedConstraints,
+};
 export const MediaMock: MediaMockClass = new MediaMockClass();

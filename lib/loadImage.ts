@@ -9,15 +9,16 @@ export async function loadImage(
   // same-origin and data: URLs; must be set before `src`.
   image.crossOrigin = "anonymous";
 
-  const timeout = new Promise<never>((_, reject) =>
-    setTimeout(
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(
       () =>
         reject(
           new Error(`Image load timeout after ${timeoutMs / 1000} seconds`),
         ),
       timeoutMs,
-    ),
-  );
+    );
+  });
 
   try {
     // 1. Set src and wait for the network fetch to complete (load event).
@@ -45,5 +46,9 @@ export async function loadImage(
     return image;
   } catch (error: unknown) {
     throw new Error(`Failed to load image: ${imageURL}. Details: ${error}`);
+  } finally {
+    // Don't leave the timeout timer pending for up to `timeoutMs` after the
+    // image has already loaded (or failed).
+    clearTimeout(timeoutId);
   }
 }

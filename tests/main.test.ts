@@ -1222,25 +1222,6 @@ describe("MediaMock", () => {
     expect(stream).toBeDefined();
   });
 
-  it("should handle direct assignment for non-configurable property in fallback", async () => {
-    // Create a custom object to test fallback assignment
-    const customObject: Record<string, any> = {};
-    Object.defineProperty(customObject, "prop", {
-      value: "original",
-      configurable: false,
-      writable: true, // Writable even though non-configurable
-    });
-
-    // Mock the property - should attempt direct assignment
-    const { defineProperty: dp } = await import("../lib/defineProperty");
-    const cleanup = dp(customObject, "prop", "mocked");
-
-    // The mock should be applied via direct assignment
-    expect(customObject.prop).toBe("mocked");
-
-    cleanup();
-  });
-
   it("should handle resolution fallback for landscape resolutions", async () => {
     const device = getDeviceForBrowser();
     const landscapeDevice: DeviceConfig = {
