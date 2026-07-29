@@ -60,13 +60,14 @@ pnpm check-types
 
 ## Testing Architecture
 
-- **Framework**: Vitest with `@vitest/browser` using Playwright
-- **Browser**: Chromium (headless by default)
-- **Test files**: `tests/main.test.ts`, `tests/regressions.test.ts`, `tests/getUserMediaError.test.ts`, `tests/createGetUserMediaError.test.ts`, `tests/loadImage.test.ts`
-- **Config**: `vitest.config.ts` (test-only; the library build lives in `tsdown.config.ts`)
+- **Framework**: Vitest, split into two projects in `vitest.config.ts` (test-only config; the library build lives in `tsdown.config.ts`)
+- **`unit` project**: node environment, `tests/unit/**`. For pure modules with no DOM dependency (`lib/constraints.ts`, `lib/resolution.ts`). Runs in ~100ms.
+- **`browser` project**: Playwright, `tests/*.test.ts`. Chromium in CI; Chromium + WebKit locally. For anything touching `navigator.mediaDevices`, canvas or the DOM.
 - **Coverage**: Uses Istanbul coverage provider with multiple reporters (text, lcov, json)
 
-The tests run in an actual browser environment, making them ideal for testing browser APIs like `navigator.mediaDevices`.
+Run one project with `pnpm vitest --run --project unit` (or `--project browser`).
+
+Put logic in a pure module with node tests when it doesn't need a browser — orientation, sizes and constraints should be passed in as arguments rather than read from `window` inside the algorithm.
 
 ## Build Configuration
 

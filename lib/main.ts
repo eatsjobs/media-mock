@@ -1,4 +1,9 @@
 import {
+  extractDeviceId,
+  extractFacingMode,
+  extractFrameRate,
+} from "./constraints";
+import {
   createGetUserMediaError,
   type GetUserMediaErrorName,
   type SimulatedErrorOptions,
@@ -13,6 +18,7 @@ import {
   type SupportedConstraints,
 } from "./devices";
 import { loadImage } from "./loadImage";
+import { type Resolution, resolveResolution } from "./resolution";
 
 export interface MockOptions {
   mediaDevices: {
@@ -121,6 +127,14 @@ function isVideoURL(url: string) {
  */
 function isRAFSupported(): boolean {
   return typeof requestAnimationFrame === "function";
+}
+
+/**
+ * Whether the viewport is currently taller than it is wide. Resolution matching
+ * needs this to decide whether to report a landscape mode swapped.
+ */
+function isPortraitViewport(): boolean {
+  return window.innerHeight > window.innerWidth;
 }
 
 function playVideo(
@@ -292,7 +306,7 @@ export class MediaMockClass {
   ) => MediaStreamTrack[] = (tracks) => tracks;
 
   private fps: number = 30;
-  private resolution: { width: number; height: number } = {
+  private resolution: Resolution = {
     width: 640,
     height: 480,
   };
@@ -901,9 +915,13 @@ export class MediaMockClass {
       );
     }
 
-    this.resolution = this.getResolution(constraints, this.settings.device);
+    this.resolution = resolveResolution(
+      constraints,
+      this.settings.device.videoResolutions,
+      isPortraitViewport(),
+    );
 
-    this.fps = this.getFPSFromConstraints(constraints);
+    this.fps = extractFrameRate(constraints);
 
     // Remove any prior canvas from the DOM before swapping in a new one (e.g. when
     // a consumer calls getUserMedia again to switch cameras).
@@ -952,8 +970,8 @@ export class MediaMockClass {
 
     // Prefer an explicit deviceId from constraints — real browsers honor this. Fall
     // back to facingMode-based selection, then to the first videoinput.
-    const requestedDeviceId = this.getDeviceIdFromConstraints(constraints);
-    const facingMode = this.getFacingModeFromConstraints(constraints);
+    const requestedDeviceId = extractDeviceId(constraints);
+    const facingMode = extractFacingMode(constraints);
     let videoDevice: MockMediaDeviceInfo | undefined;
     if (requestedDeviceId) {
       videoDevice = this.settings.device.mediaDeviceInfo.find(
@@ -1062,76 +1080,6 @@ export class MediaMockClass {
     return this.currentStream;
   }
 
-  private getFPSFromConstraints(constraints: MediaStreamConstraints): number {
-    if (typeof constraints.video === "object" && constraints.video.frameRate) {
-      const frameRate = constraints.video.frameRate;
-      if (typeof frameRate === "number") {
-        return frameRate;
-      }
-      return frameRate.exact ?? frameRate.ideal ?? frameRate.max ?? 30;
-    }
-    return 30;
-  }
-
-  /**
-   * Extract facingMode from constraints (can be a string or ConstrainDOMString)
-   */
-  private getFacingModeFromConstraints(
-    constraints: MediaStreamConstraints,
-  ): string | null {
-    if (typeof constraints.video === "object" && constraints.video.facingMode) {
-      const facingMode = constraints.video.facingMode;
-      if (typeof facingMode === "string") {
-        return facingMode;
-      }
-      // facingMode can be an object with ideal/exact properties
-      const facingModeObj = facingMode as Record<string, unknown>;
-      if (facingModeObj.ideal) {
-        const ideal = facingModeObj.ideal;
-        return Array.isArray(ideal) ? ideal[0] : (ideal as string);
-      }
-      if (facingModeObj.exact) {
-        const exact = facingModeObj.exact;
-        return Array.isArray(exact) ? exact[0] : (exact as string);
-      }
-    }
-    return null;
-  }
-
-  /**
-   * Extract deviceId from constraints. Handles string, ConstrainDOMString, and
-   * ideal/exact variants (each possibly an array).
-   */
-  private getDeviceIdFromConstraints(
-    constraints: MediaStreamConstraints,
-  ): string | null {
-    if (typeof constraints.video !== "object" || !constraints.video.deviceId) {
-      return null;
-    }
-    const deviceIdConstraint = constraints.video.deviceId as unknown;
-    if (typeof deviceIdConstraint === "string") {
-      return deviceIdConstraint;
-    }
-    if (deviceIdConstraint && typeof deviceIdConstraint === "object") {
-      const constraintObject = deviceIdConstraint as Record<string, unknown>;
-      const pickString = (candidate: unknown): string | null => {
-        if (typeof candidate === "string") {
-          return candidate;
-        }
-        if (Array.isArray(candidate) && typeof candidate[0] === "string") {
-          return candidate[0];
-        }
-        return null;
-      };
-      return (
-        pickString(constraintObject.exact) ??
-        pickString(constraintObject.ideal) ??
-        null
-      );
-    }
-    return null;
-  }
-
   /**
    * Get the appropriate camera device based on facingMode
    * Falls back to last videoinput if no matching camera found
@@ -1167,177 +1115,6 @@ export class MediaMockClass {
     return matchingDevices.length > 0
       ? matchingDevices[matchingDevices.length - 1]
       : videoDevices[0];
-  }
-
-  /**
-   * Get the appropriate resolution based on device orientation and constraints
-   * @param constraints Media constraints
-   * @param deviceConfig Device configuration
-   * @returns Resolution object with width and height
-   */
-  private getResolution(
-    constraints: MediaStreamConstraints,
-    deviceConfig: DeviceConfig,
-  ): { width: number; height: number } {
-    const isPortrait = window.innerHeight > window.innerWidth;
-    const videoConstraints = (constraints.video as MediaTrackConstraints) || {};
-
-    // Extract ideal dimensions from constraints
-    const targetWidth = this.extractConstraintValue(
-      videoConstraints.width,
-      640,
-    );
-    const targetHeight = this.extractConstraintValue(
-      videoConstraints.height,
-      480,
-    );
-
-    // Try exact match first
-    let matchedResolution = this.findExactMatch(
-      deviceConfig.videoResolutions,
-      targetWidth,
-      targetHeight,
-      isPortrait,
-    );
-
-    // If no exact match, find best fit by aspect ratio
-    if (!matchedResolution) {
-      matchedResolution = this.findBestFitResolution(
-        deviceConfig.videoResolutions,
-        targetWidth,
-        targetHeight,
-        isPortrait,
-      );
-    }
-
-    // Final fallback
-    if (!matchedResolution) {
-      matchedResolution = this.getFallbackResolution(
-        deviceConfig.videoResolutions,
-        isPortrait,
-      );
-    }
-
-    return matchedResolution;
-  }
-
-  /**
-   * Extract numeric value from constraint (handles number, object with ideal/exact, etc.)
-   */
-  private extractConstraintValue(
-    constraint: number | ConstrainULong | undefined,
-    defaultValue: number,
-  ): number {
-    if (typeof constraint === "number") {
-      return constraint;
-    }
-    if (constraint && typeof constraint === "object") {
-      return (
-        constraint.ideal ?? constraint.exact ?? constraint.max ?? defaultValue
-      );
-    }
-    return defaultValue;
-  }
-
-  /**
-   * Find exact resolution match considering orientation
-   */
-  private findExactMatch(
-    resolutions: { width: number; height: number }[],
-    targetWidth: number,
-    targetHeight: number,
-    isPortrait: boolean,
-  ): { width: number; height: number } | undefined {
-    // Try direct match first
-    const directMatch = resolutions.find(
-      (res) => res.width === targetWidth && res.height === targetHeight,
-    );
-
-    if (directMatch) {
-      // If we have direct match but in portrait mode and it's landscape resolution, swap it
-      if (isPortrait && directMatch.width > directMatch.height) {
-        return { width: directMatch.height, height: directMatch.width };
-      }
-      return directMatch;
-    }
-
-    // If portrait mode, try to find a landscape resolution that can be swapped
-    if (isPortrait) {
-      const landscapeToSwap = resolutions.find(
-        (res) => res.width === targetHeight && res.height === targetWidth,
-      );
-
-      if (landscapeToSwap) {
-        return { width: landscapeToSwap.height, height: landscapeToSwap.width };
-      }
-    }
-
-    return undefined;
-  }
-
-  /**
-   * Find best resolution match by aspect ratio and size preference
-   */
-  private findBestFitResolution(
-    resolutions: { width: number; height: number }[],
-    targetWidth: number,
-    targetHeight: number,
-    isPortrait: boolean,
-  ): { width: number; height: number } {
-    const targetAspectRatio = targetWidth / targetHeight;
-    const targetPixels = targetWidth * targetHeight;
-
-    // Score each resolution
-    const scoredResolutions = resolutions.map((res) => {
-      const actualRes =
-        isPortrait && res.width > res.height
-          ? { width: res.height, height: res.width } // Swap if needed for portrait
-          : res;
-
-      const aspectRatio = actualRes.width / actualRes.height;
-      const pixels = actualRes.width * actualRes.height;
-
-      // Calculate aspect ratio difference (lower is better)
-      const aspectDiff = Math.abs(aspectRatio - targetAspectRatio);
-
-      // Calculate size difference (prefer closest to target)
-      const sizeDiff = Math.abs(pixels - targetPixels) / targetPixels;
-
-      // Combined score (lower is better)
-      const score = aspectDiff * 2 + sizeDiff;
-
-      return { resolution: actualRes, score };
-    });
-
-    // Return resolution with lowest score
-    scoredResolutions.sort((a, b) => a.score - b.score);
-    return scoredResolutions[0].resolution;
-  }
-
-  /**
-   * Get fallback resolution based on orientation
-   */
-  private getFallbackResolution(
-    resolutions: { width: number; height: number }[],
-    isPortrait: boolean,
-  ): { width: number; height: number } {
-    if (resolutions.length === 0) {
-      return { width: 640, height: 480 }; // Ultimate fallback
-    }
-
-    if (isPortrait) {
-      // Prefer portrait resolutions, or swap landscape ones
-      const portraitRes = resolutions.find((res) => res.height > res.width);
-      if (portraitRes) return portraitRes;
-
-      // Swap first landscape resolution
-      const firstRes = resolutions[0];
-      return { width: firstRes.height, height: firstRes.width };
-    }
-
-    // For landscape, prefer landscape resolutions
-    const landscapeRes = resolutions.find((res) => res.width >= res.height);
-    return landscapeRes || resolutions[0];
   }
 }
 
