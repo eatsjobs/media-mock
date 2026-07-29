@@ -18,6 +18,7 @@ import {
   type SupportedConstraints,
 } from "./devices";
 import { type Resolution, resolveResolution } from "./resolution";
+import { CanvasSource } from "./sources/CanvasSource";
 import { createSourceFromURL } from "./sources/createSource";
 import { hideOffscreen, showForDebug } from "./sources/elementVisibility";
 import type { FrameSource } from "./sources/FrameSource";
@@ -115,6 +116,13 @@ function isPortraitViewport(): boolean {
   return window.innerHeight > window.innerWidth;
 }
 
+function isCanvasElement(value: unknown): value is HTMLCanvasElement {
+  return (
+    typeof HTMLCanvasElement !== "undefined" &&
+    value instanceof HTMLCanvasElement
+  );
+}
+
 /**
  * MediaMock class.
  *
@@ -150,6 +158,12 @@ export class MediaMockClass {
 
   /** What paints the frames — an image, a video, or anything implementing FrameSource. */
   private source: FrameSource | undefined;
+
+  /**
+   * Whether `canvas` was created here. A canvas borrowed from a consumer source
+   * must never be restyled, detached or discarded.
+   */
+  private ownsCanvas: boolean = false;
 
   private mapUnmockFunction: Map<
     keyof MockOptions["mediaDevices"],
@@ -191,41 +205,104 @@ export class MediaMockClass {
   } | null = null;
 
   /**
+   * Sets what the mocked camera streams.
+   *
+   * @example
+   * ```ts
+   * await MediaMock.setSource("./assets/barcode.png");   // image
+   * await MediaMock.setSource("./assets/clip.webm");     // video
+   * await MediaMock.setSource(renderer.domElement);      // a 3D scene
+   * await MediaMock.setSource(myOwnFrameSource);         // anything custom
+   * ```
+   *
+   * A canvas is captured as-is: it is never resized, restyled, moved in the DOM
+   * or removed, and the consumer's own render loop drives the frames.
+   *
+   * @public
+   * @param {string | HTMLCanvasElement | FrameSource} source media URL, a canvas
+   * you render into, or your own {@link FrameSource}
+   * @returns {Promise<MediaMockClass>}
+   */
+  public async setSource(
+    source: string | HTMLCanvasElement | FrameSource,
+  ): Promise<MediaMockClass> {
+    const frameSource = this.toFrameSource(source);
+
+    // Prepare the NEW source before touching any existing state, so a failed
+    // load leaves the current source — and any running stream — untouched.
+    await frameSource.prepare?.();
+
+    this.source?.dispose?.();
+    this.source = frameSource;
+
+    if (typeof source === "string") {
+      this.settings.mediaURL = source;
+    }
+
+    if (this.debug && frameSource.element) {
+      showForDebug(frameSource.element);
+    }
+
+    // Restart drawing with the new source if a stream is active. The loop
+    // redraws immediately, so the canvas (and the captured track) picks up the
+    // new content without a gap. A captured canvas has no loop to restart.
+    if (
+      !frameSource.captureCanvas &&
+      (this.intervalId !== null || this.rafId !== null)
+    ) {
+      await this.startDrawingLoop();
+    }
+    return this;
+  }
+
+  /**
+   * Normalises whatever was handed to {@link setSource} into a FrameSource.
+   */
+  private toFrameSource(
+    source: string | HTMLCanvasElement | FrameSource,
+  ): FrameSource {
+    if (typeof source === "string") {
+      if (source.trim() === "") {
+        throw new Error("Invalid mediaURL: must be a non-empty string");
+      }
+      return createSourceFromURL(source, {
+        timeoutMs: this.settings.mediaTimeout,
+        scaleFactor: () => this.settings.canvasScaleFactor,
+      });
+    }
+
+    if (isCanvasElement(source)) {
+      return new CanvasSource(source);
+    }
+
+    if (
+      typeof source === "object" &&
+      source !== null &&
+      (typeof source.drawInto === "function" || source.captureCanvas != null)
+    ) {
+      return source;
+    }
+
+    throw new Error(
+      "Invalid source: expected a media URL, an HTMLCanvasElement, or a FrameSource",
+    );
+  }
+
+  /**
    * The Image or the video that will be used as source.
+   *
+   * Superseded by {@link setSource}, which also accepts a canvas or a custom
+   * FrameSource.
+   *
    * @public
    * @param {string} mediaURL
    * @returns {Promise<MediaMockClass>}
    */
   public async setMediaURL(mediaURL: string): Promise<MediaMockClass> {
-    // Validate input
     if (!mediaURL || typeof mediaURL !== "string" || mediaURL.trim() === "") {
       throw new Error("Invalid mediaURL: must be a non-empty string");
     }
-
-    const source = createSourceFromURL(mediaURL, {
-      timeoutMs: this.settings.mediaTimeout,
-      scaleFactor: () => this.settings.canvasScaleFactor,
-    });
-
-    // Load and validate the NEW source before touching any existing state, so a
-    // failed load leaves the current stream running.
-    await source.prepare?.();
-
-    this.source?.dispose?.();
-    this.source = source;
-    this.settings.mediaURL = mediaURL;
-
-    if (this.debug && source.element) {
-      showForDebug(source.element);
-    }
-
-    // Restart drawing with the new source if a stream is active. The loop
-    // redraws immediately, so the canvas (and the captured track) picks up the
-    // new content without a gap.
-    if (this.intervalId !== null || this.rafId !== null) {
-      await this.startDrawingLoop();
-    }
-    return this;
+    return this.setSource(mediaURL);
   }
 
   private async startDrawingLoop(): Promise<void> {
@@ -250,7 +327,7 @@ export class MediaMockClass {
       if (!this.ctx) {
         return;
       }
-      source.drawInto(this.ctx, width, height);
+      source.drawInto?.(this.ctx, width, height);
     };
 
     // Draw the first frame synchronously so captureStream sees content
@@ -334,9 +411,10 @@ export class MediaMockClass {
   public enableDebugMode(): typeof MediaMock {
     this.debug = true;
 
-    // The canvas is already attached to the DOM (hidden offscreen) by getMockStream.
-    // In debug mode we just flip it visible and add a red border.
-    if (this.canvas != null) {
+    // Our own canvas is already attached to the DOM (hidden offscreen) by
+    // getMockStream; in debug mode we flip it visible and add a red border. A
+    // canvas borrowed from the consumer is left alone — it is part of their page.
+    if (this.canvas != null && this.ownsCanvas) {
       this.applyVisibleCanvasStyles(this.canvas);
     }
 
@@ -361,7 +439,7 @@ export class MediaMockClass {
   public disableDebugMode(): typeof MediaMock {
     this.debug = false;
 
-    if (this.canvas != null) {
+    if (this.canvas != null && this.ownsCanvas) {
       this.applyHiddenCanvasStyles(this.canvas);
     }
 
@@ -515,14 +593,19 @@ export class MediaMockClass {
     this.source?.dispose?.();
     this.source = undefined;
 
-    // Clean up canvas and context
-    if (this.canvas) {
-      // Remove from DOM if present
-      if (this.canvas.parentNode) {
-        this.canvas.remove();
-      }
-      this.canvas = undefined;
+    this.releaseCanvas();
+  }
+
+  /**
+   * Drops the reference to the capture canvas, detaching it only if we created
+   * it. A canvas borrowed from a consumer source stays in their page untouched.
+   */
+  private releaseCanvas(): void {
+    if (this.canvas && this.ownsCanvas && this.canvas.parentNode) {
+      this.canvas.remove();
     }
+    this.canvas = undefined;
+    this.ownsCanvas = false;
     this.ctx = undefined;
   }
 
@@ -640,49 +723,79 @@ export class MediaMockClass {
       );
     }
 
-    this.resolution = resolveResolution(
-      constraints,
-      this.settings.device.videoResolutions,
-      isPortraitViewport(),
-    );
-
     this.fps = extractFrameRate(constraints);
 
-    // Remove any prior canvas from the DOM before swapping in a new one (e.g. when
-    // a consumer calls getUserMedia again to switch cameras).
-    if (this.canvas?.parentNode) {
-      this.canvas.remove();
+    // Load the default media source on first use, so getUserMedia works with no
+    // explicit setSource() call.
+    if (!this.source) {
+      await this.setSource(this.settings.mediaURL);
     }
+    const source = this.source as FrameSource;
 
-    this.canvas = document.createElement("canvas");
-    this.canvas.id = this.mediaMockCanvasId;
+    this.releaseCanvas();
 
-    const { width, height } = this.resolution;
+    if (source.captureCanvas) {
+      // The consumer renders this canvas themselves: capture it as-is. No
+      // context is acquired (a WebGL canvas has no 2D context), no drawing loop
+      // runs, and the element is left exactly as we found it.
+      this.canvas = source.captureCanvas;
+      this.ownsCanvas = false;
+      this.ctx = undefined;
+      this.resolution = { ...source.size };
 
-    this.canvas.width = width;
-    this.canvas.height = height;
+      if (this.debug) {
+        const requested = resolveResolution(
+          constraints,
+          this.settings.device.videoResolutions,
+          isPortraitViewport(),
+        );
+        if (
+          requested.width !== this.resolution.width ||
+          requested.height !== this.resolution.height
+        ) {
+          console.warn(
+            `Requested ${requested.width}x${requested.height} but the supplied canvas is ${this.resolution.width}x${this.resolution.height}. The canvas is never resized; the track reports its real size.`,
+          );
+        }
+      }
+    } else {
+      this.resolution = resolveResolution(
+        constraints,
+        this.settings.device.videoResolutions,
+        isPortraitViewport(),
+      );
 
-    this.ctx = this.canvas.getContext("2d", { willReadFrequently: true });
-    if (!this.ctx) {
-      throw new Error("Failed to get 2D canvas context");
+      const { width, height } = this.resolution;
+
+      const canvas = document.createElement("canvas");
+      canvas.id = this.mediaMockCanvasId;
+      canvas.width = width;
+      canvas.height = height;
+
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      if (!ctx) {
+        throw new Error("Failed to get 2D canvas context");
+      }
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, width, height);
+
+      this.canvas = canvas;
+      this.ownsCanvas = true;
+      this.ctx = ctx;
+
+      // The canvas must live in the document for HTMLCanvasElement.captureStream() to
+      // produce a track whose intrinsic dimensions stay stable. On some browser
+      // versions (e.g. WebKit 26-class running under xvfb), a detached canvas
+      // produces a track whose videoWidth/videoHeight transiently report valid values
+      // and then drop to 2×2, breaking <video> consumers. Hidden offscreen by default;
+      // enableDebugMode() makes it visible.
+      this.applyHiddenCanvasStyles(canvas);
+      if (typeof document.body !== "undefined" && document.body !== null) {
+        document.body.append(canvas);
+      }
+
+      await this.startDrawingLoop();
     }
-
-    this.ctx.fillStyle = "#ffffff";
-    this.ctx.fillRect(0, 0, width, height);
-
-    // The canvas must live in the document for HTMLCanvasElement.captureStream() to
-    // produce a track whose intrinsic dimensions stay stable. On some browser
-    // versions (e.g. WebKit 26-class running under xvfb), a detached canvas
-    // produces a track whose videoWidth/videoHeight transiently report valid values
-    // and then drop to 2×2, breaking <video> consumers. Hidden offscreen by default;
-    // enableDebugMode() makes it visible.
-    this.applyHiddenCanvasStyles(this.canvas);
-    if (typeof document.body !== "undefined" && document.body !== null) {
-      document.body.append(this.canvas);
-    }
-
-    await this.setMediaURL(this.settings.mediaURL);
-    await this.startDrawingLoop();
 
     if (this.debug) {
       this.enableDebugMode();
@@ -847,6 +960,7 @@ export * from "./createMediaDeviceInfo";
 export {
   type DeviceConfig,
   devices,
+  type FrameSource,
   type GetUserMediaErrorName,
   type SimulatedErrorOptions,
   type SupportedConstraints,
