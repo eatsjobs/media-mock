@@ -1,4 +1,3 @@
-import * as THREE from "three";
 import { devices, MediaMock, TimerMode } from "../lib/main.ts";
 
 /**
@@ -26,8 +25,13 @@ const statusElement = document.querySelector<HTMLElement>(
 /**
  * A rotating cube rendered by Three.js. Its canvas is what MediaMock captures,
  * so whatever this draws becomes the camera feed.
+ *
+ * Three.js is imported lazily: it is ~600kB and only this mode needs it, so the
+ * page stays light until the button is pressed.
  */
-function createThreeScene(width: number, height: number) {
+async function createThreeScene(width: number, height: number) {
+  const THREE = await import("three");
+
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(width, height);
 
@@ -81,7 +85,7 @@ async function start(source: "video" | "three") {
 
   if (source === "three") {
     // A canvas MediaMock captures as-is: never resized, restyled or removed.
-    await MediaMock.setSource(createThreeScene(1280, 720));
+    await MediaMock.setSource(await createThreeScene(1280, 720));
   } else {
     await MediaMock.setSource(VIDEO_ASSET_URL);
   }
