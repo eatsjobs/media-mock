@@ -8,20 +8,24 @@ import {
   type GetUserMediaErrorName,
   type SimulatedErrorOptions,
 } from "./createGetUserMediaError";
+import type { MockMediaDeviceInfo } from "./createMediaDeviceInfo";
 import {
-  type MockMediaDeviceInfo,
-  redactMediaDeviceInfo,
-} from "./createMediaDeviceInfo";
+  cloneDeviceConfig,
+  listDevices,
+  selectVideoDevice,
+} from "./deviceRegistry";
 import {
   type DeviceConfig,
   devices,
   type SupportedConstraints,
 } from "./devices";
+import { MediaDevicesPatcher } from "./patchMediaDevices";
 import { type Resolution, resolveResolution } from "./resolution";
 import { CanvasSource } from "./sources/CanvasSource";
 import { createSourceFromURL } from "./sources/createSource";
 import { hideOffscreen, showForDebug } from "./sources/elementVisibility";
 import type { FrameSource } from "./sources/FrameSource";
+import { decorateVideoTrack } from "./track";
 
 export interface MockOptions {
   mediaDevices: {
@@ -165,10 +169,7 @@ export class MediaMockClass {
    */
   private ownsCanvas: boolean = false;
 
-  private mapUnmockFunction: Map<
-    keyof MockOptions["mediaDevices"],
-    VoidFunction
-  > = new Map();
+  private readonly patcher = new MediaDevicesPatcher();
 
   private currentStream: (MediaStream & { stop?: VoidFunction }) | undefined;
 
@@ -509,53 +510,35 @@ export class MediaMockClass {
   ): typeof MediaMock {
     // Clone the config so addMockDevice/removeMockDevice never mutate the
     // caller's object (the exported presets are shared across tests).
-    this.settings.device = {
-      ...device,
-      videoResolutions: device.videoResolutions.map((res) => ({ ...res })),
-      mediaDeviceInfo: [...device.mediaDeviceInfo],
-      supportedConstraints: { ...device.supportedConstraints },
-    };
+    this.settings.device = cloneDeviceConfig(device);
     this.settings.constraints = this.settings.device.supportedConstraints;
 
-    if (typeof MediaDevices === "undefined") {
+    if (!MediaDevicesPatcher.isSupported()) {
       console.warn(
         "MediaDevices is not available in this environment — mock() has no effect.",
       );
       return this;
     }
 
-    // biome-ignore lint/suspicious/noExplicitAny: patching prototype properties by name requires any
-    type AnyFn = (...args: any[]) => any;
-    const proto = MediaDevices.prototype as unknown as Record<string, AnyFn>;
-
-    const patchProto = (
-      key: keyof MockOptions["mediaDevices"],
-      mockFn: AnyFn,
-    ): void => {
-      // Only capture the original on the first patch — on repeated mock() calls
-      // without unmock(), proto[key] is already our mock and saving it would
-      // permanently lose the native implementation.
-      if (!this.mapUnmockFunction.has(key)) {
-        const original = proto[key];
-        this.mapUnmockFunction.set(key, () => {
-          proto[key] = original;
-        });
-      }
-      proto[key] = mockFn;
-    };
-
     if (options?.mediaDevices.getUserMedia) {
-      patchProto("getUserMedia", (constraints: MediaStreamConstraints) =>
-        this.getMockStream(constraints),
+      this.patcher.patch(
+        "getUserMedia",
+        (constraints: MediaStreamConstraints) =>
+          this.getMockStream(constraints),
       );
     }
 
     if (options?.mediaDevices.getSupportedConstraints) {
-      patchProto("getSupportedConstraints", () => this.settings.constraints);
+      this.patcher.patch(
+        "getSupportedConstraints",
+        () => this.settings.constraints,
+      );
     }
 
     if (options?.mediaDevices.enumerateDevices) {
-      patchProto("enumerateDevices", async () => this.enumerateMockDevices());
+      this.patcher.patch("enumerateDevices", async () =>
+        this.enumerateMockDevices(),
+      );
     }
 
     return this;
@@ -572,10 +555,7 @@ export class MediaMockClass {
     this.disableDebugMode();
     this.mockedVideoTracksHandler = (tracks) => tracks;
     this.simulatedGetUserMediaError = null;
-    this.mapUnmockFunction.forEach((unmock) => {
-      unmock();
-    });
-    this.mapUnmockFunction.clear();
+    this.patcher.restoreAll();
 
     return this;
   }
@@ -687,10 +667,9 @@ export class MediaMockClass {
    * rejecting — that is what real browsers do before permission is granted.
    */
   private enumerateMockDevices(): MockMediaDeviceInfo[] {
-    if (this.simulatedGetUserMediaError?.name === "NotAllowedError") {
-      return this.settings.device.mediaDeviceInfo.map(redactMediaDeviceInfo);
-    }
-    return this.settings.device.mediaDeviceInfo;
+    return listDevices(this.settings.device, {
+      redacted: this.simulatedGetUserMediaError?.name === "NotAllowedError",
+    });
   }
 
   /**
@@ -806,153 +785,26 @@ export class MediaMockClass {
 
     const videoTracks = canvasStream?.getVideoTracks() ?? [];
 
-    // Prefer an explicit deviceId from constraints — real browsers honor this. Fall
-    // back to facingMode-based selection, then to the first videoinput.
-    const requestedDeviceId = extractDeviceId(constraints);
-    const facingMode = extractFacingMode(constraints);
-    let videoDevice: MockMediaDeviceInfo | undefined;
-    if (requestedDeviceId) {
-      videoDevice = this.settings.device.mediaDeviceInfo.find(
-        (device) =>
-          device.kind === "videoinput" && device.deviceId === requestedDeviceId,
-      );
-    }
-    if (!videoDevice) {
-      videoDevice = this.getDeviceForFacingMode(
-        facingMode,
-        this.settings.device,
-      );
-    }
-
-    videoTracks.forEach((track: MediaStreamTrack) => {
-      // Set the track label to match the selected device label
-      if (videoDevice?.label) {
-        Object.defineProperty(track, "label", {
-          value: videoDevice.label,
-          writable: false,
-          configurable: false,
-        });
-      }
-
-      // Set the track id (deviceId) to match the selected device
-      if (videoDevice?.deviceId) {
-        Object.defineProperty(track, "id", {
-          value: videoDevice.deviceId,
-          writable: false,
-          configurable: false,
-        });
-      }
-
-      // Ensure getCapabilities method is always available (all real devices have this)
-      if (!track.getCapabilities) {
-        if (videoDevice?.getCapabilities) {
-          // Use the device-specific capabilities from mockCapabilities
-          // Bind to track so 'this' refers to the track
-          track.getCapabilities = function (this: MediaStreamTrack) {
-            return videoDevice.getCapabilities();
-          }.bind(track);
-        } else {
-          // Fallback to device resolutions if no specific capabilities defined
-          const deviceResolutions = this.settings.device.videoResolutions;
-          const widths = deviceResolutions.map((res) => res.width);
-          const heights = deviceResolutions.map((res) => res.height);
-
-          track.getCapabilities = function (this: MediaStreamTrack) {
-            return {
-              width: { min: Math.min(...widths), max: Math.max(...widths) },
-              height: { min: Math.min(...heights), max: Math.max(...heights) },
-              frameRate: { min: 1, max: 60 },
-              facingMode: ["user", "environment"],
-              resizeMode: ["none", "crop-and-scale"],
-            };
-          }.bind(track);
-        }
-      }
-
-      // Enhance getSettings to provide consistent real-device behavior
-      const originalGetSettings = track.getSettings.bind(track);
-      track.getSettings = () => {
-        const settings = originalGetSettings();
-
-        // Real devices always provide frameRate in settings
-        if (settings.frameRate === undefined) {
-          settings.frameRate = this.fps;
-        }
-
-        // Real devices always provide width/height in settings
-        if (settings.width === undefined || settings.height === undefined) {
-          settings.width = this.resolution.width;
-          settings.height = this.resolution.height;
-        }
-
-        // Real devices always expose the source device's deviceId — overwrite the
-        // canvas-stream's synthetic track id so consumers can confirm which device
-        // this stream came from. Some browsers populate settings.deviceId with the
-        // underlying MediaStreamTrack id (a random uuid), which is misleading.
-        if (videoDevice?.deviceId) {
-          settings.deviceId = videoDevice.deviceId;
-        }
-
-        // Expose facingMode when known — many consumers read this to disambiguate
-        // front vs back cameras (especially on iOS Safari, where the same physical
-        // back camera can be advertised under multiple labels).
-        if (settings.facingMode === undefined) {
-          const capabilities = videoDevice?.getCapabilities?.();
-          const supportedFacingModes = capabilities?.facingMode;
-          if (
-            Array.isArray(supportedFacingModes) &&
-            supportedFacingModes.length > 0
-          ) {
-            settings.facingMode = supportedFacingModes[0];
-          }
-        }
-
-        return settings;
-      };
+    // An explicit deviceId wins, then facingMode, then the first videoinput.
+    const videoDevice = selectVideoDevice(this.settings.device, {
+      deviceId: extractDeviceId(constraints),
+      facingMode: extractFacingMode(constraints),
     });
+
+    for (const track of videoTracks) {
+      decorateVideoTrack(track, {
+        device: videoDevice,
+        fps: this.fps,
+        resolution: this.resolution,
+        deviceResolutions: this.settings.device.videoResolutions,
+      });
+    }
 
     this.currentStream = new MediaStream(
       this.mockedVideoTracksHandler(videoTracks),
     );
 
     return this.currentStream;
-  }
-
-  /**
-   * Get the appropriate camera device based on facingMode
-   * Falls back to last videoinput if no matching camera found
-   */
-  private getDeviceForFacingMode(
-    facingMode: string | null,
-    device: DeviceConfig,
-  ): MockMediaDeviceInfo | undefined {
-    const videoDevices = device.mediaDeviceInfo.filter(
-      (d) => d.kind === "videoinput",
-    );
-
-    if (!videoDevices.length) {
-      return undefined;
-    }
-
-    if (!facingMode) {
-      return videoDevices[0];
-    }
-
-    // Find all devices that support the requested facingMode and return the last one
-    // This usually is the Back Camera or camera2 0, facing back for the given default devices
-    const matchingDevices = videoDevices.filter((d) => {
-      const capabilities = d.getCapabilities();
-      const supportedFacingModes = capabilities.facingMode;
-      return (
-        Array.isArray(supportedFacingModes) &&
-        supportedFacingModes.includes(facingMode)
-      );
-    });
-
-    // Return the last matching device if found, otherwise fall back to first videoinput
-    return matchingDevices.length > 0
-      ? matchingDevices[matchingDevices.length - 1]
-      : videoDevices[0];
   }
 }
 
