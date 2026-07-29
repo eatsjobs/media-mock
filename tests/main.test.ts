@@ -127,12 +127,21 @@ describe("MediaMock", () => {
 
   it("should unmock properly", async () => {
     const device = getDeviceForBrowser();
+    const nativeGetUserMedia = MediaDevices.prototype.getUserMedia;
+    const nativeEnumerateDevices = MediaDevices.prototype.enumerateDevices;
+
     MediaMock.mock(device);
     await MediaMock.setMediaURL(imageUrl);
+    expect(MediaDevices.prototype.getUserMedia).not.toBe(nativeGetUserMedia);
 
     MediaMock.unmock();
 
-    expect(MediaMock["mapUnmockFunction"].size).toBe(0);
+    // The observable contract is that the native methods are back, rather than
+    // any particular internal bookkeeping being empty.
+    expect(MediaDevices.prototype.getUserMedia).toBe(nativeGetUserMedia);
+    expect(MediaDevices.prototype.enumerateDevices).toBe(
+      nativeEnumerateDevices,
+    );
   });
 
   it("should apply frameRate constraint", async () => {

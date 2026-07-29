@@ -1,5 +1,10 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { createMediaDeviceInfo, devices, MediaMock } from "../lib/main";
+import {
+  createMediaDeviceInfo,
+  devices,
+  MediaMock,
+  TimerMode,
+} from "../lib/main";
 
 describe("MediaMock regressions", () => {
   const imageUrl = "/assets/ean8_12345670.png";
@@ -69,6 +74,21 @@ describe("MediaMock regressions", () => {
     // would have rejected setMediaURL — and an <img> would have been attached
     // to the document. Video sources stay detached.
     expect(document.querySelector("img")).toBeNull();
+  });
+
+  it("should produce a live stream with each timer mode", async () => {
+    // setTimerMode is public API and had no end-to-end coverage; Raf in
+    // particular takes a different code path through the drawing loop.
+    for (const mode of [TimerMode.SetInterval, TimerMode.Raf, TimerMode.Auto]) {
+      MediaMock.unmock();
+      MediaMock.setTimerMode(mode).mock(devices["Samsung Galaxy M53"]);
+      await MediaMock.setMediaURL(imageUrl);
+
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      expect(stream.getVideoTracks()[0].readyState, mode).toBe("live");
+    }
+
+    MediaMock.setTimerMode(TimerMode.SetInterval);
   });
 
   it("should reject when a video source fails to load", async () => {
