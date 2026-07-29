@@ -23,6 +23,7 @@ Can also be used as browser extension please have a look at this repo [https://g
   - [Configuring a Custom Device and Constraints](#configuring-a-custom-device-and-constraints)
   - [Configuring Media Load Timeout](#configuring-media-load-timeout)
   - [Controlling the Drawing Timer (headless/CI)](#controlling-the-drawing-timer-headlessci)
+  - [Streaming Your Own Canvas (3D scenes)](#streaming-your-own-canvas-3d-scenes)
   - [Simulating Errors](#simulating-errors)
   - [Creating Custom Mock Devices](#creating-custom-mock-devices)
 - [API Documentation](#api-documentation)
@@ -47,6 +48,7 @@ Can also be used as browser extension please have a look at this repo [https://g
 - **Headless-Friendly Timer Modes**: Choose how frames are pushed to the stream (`requestAnimationFrame`, `setInterval`, or automatic) for reliable capture under headless / virtual displays (e.g. `xvfb`).
 - **Custom Mock Devices**: Build your own `MediaDeviceInfo` entries (with capabilities like `torch`, `zoom`, etc.) via `createMediaDeviceInfo`.
 - **Error Simulation**: Make `getUserMedia` reject with realistic errors (`NotAllowedError`, `NotFoundError`, `OverconstrainedError`, ...) to test permission-denied and no-camera paths.
+- **Bring Your Own Canvas**: Stream a canvas you render into — a WebGL/Three.js 3D scene, or procedural frames via a custom `FrameSource`.
 
 ---
 
@@ -178,6 +180,69 @@ MediaMock
 await MediaMock.setMediaURL("./assets/640x480-sample.png");
 ```
 
+## Streaming Your Own Canvas (3D scenes)
+
+Pass a canvas you render into and MediaMock captures it directly, so a WebGL/Three.js scene — or any animation you draw yourself — becomes the camera feed:
+
+```typescript
+import { MediaMock, devices } from "@eatsjobs/media-mock";
+import * as THREE from "three";
+
+const renderer = new THREE.WebGLRenderer();
+renderer.setSize(1280, 720);
+
+MediaMock.mock(devices["Mac Desktop"]);
+await MediaMock.setSource(renderer.domElement);
+
+// Your render loop drives the stream
+function animate() {
+  requestAnimationFrame(animate);
+  cube.rotation.y += 0.01;
+  renderer.render(scene, camera);
+}
+animate();
+
+const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+// every frame is your live 3D scene
+```
+
+Your canvas is captured as-is. MediaMock creates no canvas of its own, acquires **no rendering context** (a WebGL canvas has no 2D context to give), and runs no drawing loop — your render loop is the frame source.
+
+Four guarantees for a canvas you supply:
+
+- **It is never resized.** Assigning `width`/`height` would clear the WebGL drawing buffer and desynchronise a renderer's internal size bookkeeping. Resolution constraints are therefore *not* applied to it.
+- **The track reports the canvas's real size.** `getSettings()` returns its actual pixel dimensions rather than a constraint-matched value. Request 1920×1080 from an 800×600 canvas and you get 800×600 — with a warning in debug mode, not a resize.
+- **`frameRate` constraints still apply**, because capture rate is independent of your render loop.
+- **Nothing else is touched** — not restyled (including by `enableDebugMode()`), not moved in the DOM, not removed by `unmock()`.
+
+### Any source: `setSource`
+
+`setSource` also accepts media URLs, and replaces `setMediaURL`:
+
+```typescript
+await MediaMock.setSource("./assets/barcode.png");   // image
+await MediaMock.setSource("./assets/clip.webm");     // video
+await MediaMock.setSource(renderer.domElement);      // canvas
+```
+
+For anything else, implement `FrameSource` yourself — useful for procedural frames such as synthetic test patterns:
+
+```typescript
+import { MediaMock, type FrameSource } from "@eatsjobs/media-mock";
+
+const noise: FrameSource = {
+  size: { width: 640, height: 480 },
+  drawInto(ctx, width, height) {
+    ctx.fillStyle = `hsl(${(Date.now() / 10) % 360}, 100%, 50%)`;
+    ctx.fillRect(0, 0, width, height);
+  },
+};
+
+await MediaMock.setSource(noise);
+```
+
+A source provides **either** `drawInto` (MediaMock owns the canvas and drives the timer) **or** `captureCanvas` (MediaMock captures your canvas and runs no timer). Note that a `drawInto` source does not dictate resolution — MediaMock sizes its canvas from the constraints and the emulated device, as it does for an image.
+
 ## Simulating Errors
 
 Real apps have to handle a user denying camera permission, a machine with no camera, or a camera already in use by another application. `simulateGetUserMediaError` makes `getUserMedia` reject so those paths can be tested:
@@ -271,11 +336,38 @@ MediaMock.addMockDevice(extraCamera); // fires a `devicechange` event
   
 The main class of the library, used to configure, initialize, and manage the mock media devices.
 
+#### `async setSource(source: string | HTMLCanvasElement | FrameSource): Promise<MediaMock>`
+
+Sets what the mocked camera streams, and returns the instance for chaining. See [Streaming Your Own Canvas](#streaming-your-own-canvas-3d-scenes).
+
+- **source**: a media URL (image or video, chosen by extension), an `HTMLCanvasElement` you render into, or your own `FrameSource`.
+
+A failed load leaves the previous source and any running stream untouched.
+
 #### `async setMediaURL(path: string): Promise<MediaMock>`
 
-Sets a custom image URL or video URL to be used as the source and returns the instance for chaining. This method is now asynchronous to properly handle media loading.
+Sets a custom image URL or video URL to be used as the source and returns the instance for chaining. Equivalent to `setSource(path)`, which supersedes it.
 
 - **path**: `string` - Path to the image or video file.
+
+#### `FrameSource`
+
+```typescript
+interface FrameSource {
+  /** Intrinsic size of the media, in pixels. */
+  readonly size: { width: number; height: number };
+  /** DOM element behind the source, if any — exposed so debug mode can show it. */
+  readonly element?: HTMLElement;
+  /** Load whatever is needed before capture starts; may reject. */
+  prepare?(): Promise<void>;
+  /** Paint one frame. Provide this OR captureCanvas. */
+  drawInto?(ctx: CanvasRenderingContext2D, width: number, height: number): void;
+  /** A canvas you already render into; captured as-is, with no drawing loop. */
+  readonly captureCanvas?: HTMLCanvasElement;
+  /** Release only what this source created. */
+  dispose?(): void;
+}
+```
 
 #### `enableDebugMode(): MediaMock`
 
