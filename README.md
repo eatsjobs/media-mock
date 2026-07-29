@@ -26,14 +26,14 @@ Can also be used as browser extension please have a look at this repo [https://g
   - [Streaming Your Own Canvas (3D scenes)](#streaming-your-own-canvas-3d-scenes)
   - [Simulating Errors](#simulating-errors)
   - [Creating Custom Mock Devices](#creating-custom-mock-devices)
-- [Migrating to 2.0](#migrating-to-20)
+- [Migrating to 2.0](#migrating-to-20) · [full guide](./MIGRATION.md)
 - [API Documentation](#api-documentation)
   - [MediaMock](#mediamock)
   - [createMediaMock](#createmediamock)
   - [TimerMode](#timermode)
   - [GetUserMediaErrorName](#getusermediaerrorname)
   - [createMediaDeviceInfo](#createmediadeviceinfo)
-  - [Settings](#settings)
+  - [Settings and ConfigurableSettings](#settings)
   - [MockOptions](#mockoptions)
   - [DeviceConfig](#deviceconfig)
 - [Debugging](#debugging)
@@ -51,6 +51,7 @@ Can also be used as browser extension please have a look at this repo [https://g
 - **Custom Mock Devices**: Build your own `MediaDeviceInfo` entries (with capabilities like `torch`, `zoom`, etc.) via `createMediaDeviceInfo`.
 - **Error Simulation**: Make `getUserMedia` reject with realistic errors (`NotAllowedError`, `NotFoundError`, `OverconstrainedError`, ...) to test permission-denied and no-camera paths.
 - **Bring Your Own Canvas**: Stream a canvas you render into — a WebGL/Three.js 3D scene, or procedural frames via a custom `FrameSource`.
+- **Isolated Instances**: `createMediaMock()` gives each test file its own instance, so configuration and device state cannot leak between them.
 
 ---
 
@@ -82,7 +83,7 @@ Include directly in your HTML via [jsDelivr](https://www.jsdelivr.com/) or [unpk
 <script src="https://cdn.jsdelivr.net/npm/@eatsjobs/media-mock"></script>
 
 <!-- Specific version -->
-<script src="https://cdn.jsdelivr.net/npm/@eatsjobs/media-mock@1.3.1"></script>
+<script src="https://cdn.jsdelivr.net/npm/@eatsjobs/media-mock@2.0.0"></script>
 ```
 
 **unpkg**:
@@ -92,7 +93,7 @@ Include directly in your HTML via [jsDelivr](https://www.jsdelivr.com/) or [unpk
 <script src="https://unpkg.com/@eatsjobs/media-mock"></script>
 
 <!-- Specific version -->
-<script src="https://unpkg.com/@eatsjobs/media-mock@1.3.1"></script>
+<script src="https://unpkg.com/@eatsjobs/media-mock@2.0.0"></script>
 ```
 
 When loaded via CDN, `MediaMock` and `devices` are available on the global `window.MediaMock` object:
@@ -158,10 +159,11 @@ await MediaMock.setSource("./assets/640x480-sample.png");
 MediaMock.setMediaTimeout(5 * 60 * 1000); // 5 minutes
 await MediaMock.setSource("./assets/video.mp4");
 
-// Method chaining is supported
-MediaMock
-  .setMediaTimeout(45 * 1000)
-  .setCanvasScaleFactor(0.8);
+// Or set several options at once
+MediaMock.configure({
+  mediaTimeout: 45 * 1000,
+  canvasScaleFactor: 0.8,
+});
 ```
 
 ## Controlling the Drawing Timer (headless/CI)
@@ -334,30 +336,17 @@ MediaMock.addMockDevice(extraCamera); // fires a `devicechange` event
 
 ## Migrating to 2.0
 
-Two breaking changes, both mechanical.
-
-### `setMediaURL()` is now `setSource()`
-
-`setSource()` accepts everything `setMediaURL` did, plus canvases and custom sources:
+Two breaking changes, both mechanical:
 
 ```diff
 -await MediaMock.setMediaURL("./assets/frame.png");
 +await MediaMock.setSource("./assets/frame.png");
-```
 
-### `settings` is read-only
-
-Reading is unchanged. Writing goes through [`configure()`](#configureoptions-configurablesettings-mediamock):
-
-```diff
 -MediaMock.settings.canvasScaleFactor = 0.8;
--MediaMock.settings.mediaTimeout = 30_000;
-+MediaMock.configure({ canvasScaleFactor: 0.8, mediaTimeout: 30_000 });
++MediaMock.configure({ canvasScaleFactor: 0.8 });
 ```
 
-`settings` is frozen at runtime, so an assignment throws rather than being silently ignored. The existing `setCanvasScaleFactor`, `setMediaTimeout` and `setTimerMode` setters keep working.
-
-Everything else — `mock`, `unmock`, `enableDebugMode`, `addMockDevice`, `setMockedVideoTracksHandler`, `simulateGetUserMediaError`, `TimerMode`, `devices` — is unchanged.
+TypeScript flags both, so a clean type-check means the upgrade is complete. Everything else is unchanged. See **[MIGRATION.md](./MIGRATION.md)** for the full guide, including why each change was made and the optional move to isolated instances via `createMediaMock()`.
 
 ---
 
@@ -605,14 +594,24 @@ interface MockOptions {
 
 ### `Settings`
 
-Interface that contains the mock settings for media URL, device configuration, and video constraints.
+The shape of `MediaMock.settings`, which is a **read-only** snapshot — see [`settings`](#settings-readonlysettings). Write with [`configure()`](#configureoptions-configurablesettings-mediamock).
 
-- **mediaURL**: `string` - The URL of the image or video used as the media source.
+- **mediaURL**: `string` *(read-only)* - The URL of the image or video used as the media source. Set by `setSource()`; empty of meaning when the source is a canvas or custom `FrameSource`.
 - **device**: `DeviceConfig` - Specifies the configuration for the mock device, such as resolution and media information.
 - **constraints**: `SupportedConstraints` - The constraint names reported by the mocked `getSupportedConstraints()`. Kept in sync with the mocked device by `mock()`.
-- **canvasScaleFactor**: `number` - Scale factor for the image in the canvas (0.1-1.0).
-- **mediaTimeout**: `number` - Timeout for media loading in milliseconds (default: 60000 = 60 seconds). Applied to both images and videos.
-- **timerMode**: `TimerMode` - Timer strategy for the canvas drawing loop (default: `TimerMode.SetInterval`). See [TimerMode](#timermode).
+- **canvasScaleFactor**: `number` - Scale factor for the image in the canvas, clamped to a minimum of 0.1. Configurable.
+- **mediaTimeout**: `number` - Timeout for media loading in milliseconds (default: 60000 = 60 seconds). Applied to both images and videos. Must be positive. Configurable.
+- **timerMode**: `TimerMode` - Timer strategy for the canvas drawing loop (default: `TimerMode.SetInterval`). See [TimerMode](#timermode). Configurable.
+
+The three marked *configurable* are the members of `ConfigurableSettings`, the argument to `configure()`:
+
+```typescript
+interface ConfigurableSettings {
+  canvasScaleFactor?: number;
+  mediaTimeout?: number;
+  timerMode?: TimerMode;
+}
+```
 
 ---
 
