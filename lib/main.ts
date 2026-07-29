@@ -17,8 +17,10 @@ import {
   devices,
   type SupportedConstraints,
 } from "./devices";
-import { loadImage } from "./loadImage";
 import { type Resolution, resolveResolution } from "./resolution";
+import { createSourceFromURL } from "./sources/createSource";
+import { hideOffscreen, showForDebug } from "./sources/elementVisibility";
+import type { FrameSource } from "./sources/FrameSource";
 
 export interface MockOptions {
   mediaDevices: {
@@ -98,30 +100,6 @@ export interface Settings {
   timerMode: TimerMode;
 }
 
-function isVideoURL(url: string) {
-  const videoExtensions = [
-    "mp4",
-    "webm",
-    "ogg",
-    "mov",
-    "avi",
-    "mkv",
-    "flv",
-    "wmv",
-    "m4v",
-    "3gp",
-    "mpg",
-    "mpeg",
-    "asf",
-    "rm",
-    "vob",
-  ];
-  // Strip query string and fragment so "video.mp4?token=abc" still resolves
-  // to the "mp4" extension.
-  const extension = url.split(/[?#]/)[0].split(".").pop()?.toLowerCase();
-  return videoExtensions.includes(extension ?? "");
-}
-
 /**
  * Check if RequestAnimationFrame is supported
  */
@@ -135,114 +113,6 @@ function isRAFSupported(): boolean {
  */
 function isPortraitViewport(): boolean {
   return window.innerHeight > window.innerWidth;
-}
-
-function playVideo(
-  videoElement: HTMLVideoElement,
-  timeoutMs: number = 60 * 1000,
-) {
-  return new Promise<void>((resolve, reject) => {
-    let timeoutId: ReturnType<typeof setTimeout> | null = null;
-    let isPromiseSettled = false;
-
-    /**
-     * Cleanup function to remove all event listeners and timeout
-     */
-    const cleanup = () => {
-      if (timeoutId !== null) {
-        clearTimeout(timeoutId);
-        timeoutId = null;
-      }
-      videoElement.removeEventListener("loadeddata", onLoadedData);
-      videoElement.removeEventListener("error", onError);
-    };
-
-    /**
-     * Handle successful video loading
-     */
-    const onLoadedData = async () => {
-      if (isPromiseSettled) return;
-      isPromiseSettled = true;
-
-      cleanup();
-
-      try {
-        await videoElement.play();
-        resolve();
-      } catch (e: unknown) {
-        // Note: Autoplay may be blocked by browser, but video is still loaded
-        // Log as warning, not error, and continue for testing purposes
-        console.warn("Video autoplay failed (may be blocked by browser):", e);
-        resolve(); // Continue anyway for testing - video is loaded even if autoplay blocked
-      }
-    };
-
-    /**
-     * Handle video loading errors
-     */
-    const onError = () => {
-      if (isPromiseSettled) return;
-      isPromiseSettled = true;
-
-      cleanup();
-
-      console.error(
-        "Failed to load video source. Ensure the format is supported and the URL is valid.",
-      );
-      console.error("Video error details:", {
-        error: videoElement.error?.message,
-        target: videoElement,
-        networkState: videoElement.networkState,
-        readyState: videoElement.readyState,
-        currentSrc: videoElement.currentSrc,
-      });
-      reject(new Error(`Video failed to load: ${videoElement.src}`));
-    };
-
-    /**
-     * Handle timeout
-     */
-    const onTimeout = () => {
-      if (isPromiseSettled) return;
-      isPromiseSettled = true;
-
-      cleanup();
-
-      reject(
-        new Error(`Video loading timed out after ${timeoutMs / 1000} seconds`),
-      );
-    };
-
-    // Set up timeout
-    timeoutId = setTimeout(onTimeout, timeoutMs);
-
-    // Add event listeners
-    videoElement.addEventListener("loadeddata", onLoadedData, { once: true });
-    videoElement.addEventListener("error", onError, { once: true });
-
-    // Start loading
-    videoElement.load();
-  });
-}
-
-async function loadMedia(
-  mediaURL: string,
-  timeoutMs: number = 60 * 1000,
-): Promise<HTMLImageElement | HTMLVideoElement> {
-  if (isVideoURL(mediaURL)) {
-    const video = document.createElement("video");
-    video.src = mediaURL;
-    video.muted = true;
-    video.playsInline = true;
-    video.loop = true;
-    video.autoplay = true;
-    video.hidden = true;
-    video.crossOrigin = "anonymous";
-    await playVideo(video, timeoutMs);
-    return video;
-  } else {
-    return await loadImage(mediaURL, timeoutMs);
-  }
 }
 
 /**
@@ -276,13 +146,10 @@ export class MediaMockClass {
     timerMode: TimerMode.SetInterval,
   };
 
-  private readonly mediaMockImageId = "media-mock-image";
-
   private readonly mediaMockCanvasId = "media-mock-canvas";
 
-  private currentImage: HTMLImageElement | undefined;
-
-  private currentVideo: HTMLVideoElement | undefined;
+  /** What paints the frames — an image, a video, or anything implementing FrameSource. */
+  private source: FrameSource | undefined;
 
   private mapUnmockFunction: Map<
     keyof MockOptions["mediaDevices"],
@@ -335,49 +202,26 @@ export class MediaMockClass {
       throw new Error("Invalid mediaURL: must be a non-empty string");
     }
 
-    // Load and validate the NEW media before updating settings
-    const media = await loadMedia(mediaURL, this.settings.mediaTimeout);
+    const source = createSourceFromURL(mediaURL, {
+      timeoutMs: this.settings.mediaTimeout,
+      scaleFactor: () => this.settings.canvasScaleFactor,
+    });
 
-    // Update settings after successful load
+    // Load and validate the NEW source before touching any existing state, so a
+    // failed load leaves the current stream running.
+    await source.prepare?.();
+
+    this.source?.dispose?.();
+    this.source = source;
     this.settings.mediaURL = mediaURL;
 
-    // Clean up old media and store new media
-    if (media instanceof HTMLImageElement) {
-      if (this.currentVideo) {
-        this.currentVideo.pause();
-        this.currentVideo.src = "";
-      }
-      // Remove previous image from DOM if present
-      if (this.currentImage?.parentNode) {
-        this.currentImage.remove();
-      }
-      this.currentImage = media;
-      this.currentVideo = undefined;
-      // Append the image to the document offscreen. Keeping the source image in
-      // the DOM prevents some webkit versions from evicting its decoded pixel data
-      // from GPU memory, which would cause drawImage to produce blank frames.
-      if (typeof document !== "undefined" && document.body) {
-        if (this.debug) {
-          this.applyVisibleImageStyles(media);
-        } else {
-          this.applyHiddenImageStyles(media);
-        }
-        document.body.append(media);
-      }
-    } else if (media instanceof HTMLVideoElement) {
-      if (this.currentImage) {
-        this.currentImage.src = "";
-        if (this.currentImage.parentNode) {
-          this.currentImage.remove();
-        }
-      }
-      this.currentVideo = media;
-      this.currentImage = undefined;
+    if (this.debug && source.element) {
+      showForDebug(source.element);
     }
 
-    // Restart drawing with new media if stream is active.
-    // startDrawingLoop redraws immediately, so the canvas (and captureStream track)
-    // picks up the new image content without any gap.
+    // Restart drawing with the new source if a stream is active. The loop
+    // redraws immediately, so the canvas (and the captured track) picks up the
+    // new content without a gap.
     if (this.intervalId !== null || this.rafId !== null) {
       await this.startDrawingLoop();
     }
@@ -388,48 +232,39 @@ export class MediaMockClass {
     // Stop any existing drawing loop
     this.stopDrawingLoop();
 
+    const source = this.source;
+    if (!source) {
+      throw new Error("No media source loaded");
+    }
+
     const { width, height } = this.resolution;
 
-    if (isVideoURL(this.settings.mediaURL)) {
-      if (!this.currentVideo) {
-        throw new Error("Video media not loaded");
-      }
-
-      this.startVideoDrawingLoop(width, height);
-    } else {
-      if (!this.currentImage) {
-        throw new Error("Image media not loaded");
-      }
-
-      if (this.debug) {
-        console.log(`
+    if (this.debug) {
+      const { width: sourceWidth, height: sourceHeight } = source.size;
+      console.log(`
           Canvas: ${width}x${height},
-          Image: ${this.currentImage.naturalWidth}x${this.currentImage.naturalHeight}`);
-      }
-
-      this.startImageDrawingLoop(width, height);
+          Source: ${sourceWidth}x${sourceHeight}`);
     }
-  }
-
-  /**
-   * Start drawing loop for video using RequestAnimationFrame with FPS throttling
-   */
-  private startVideoDrawingLoop(width: number, height: number): void {
-    const frameInterval = 1000 / this.fps; // Time between frames in ms
-    this.lastDrawTime = performance.now();
 
     const drawFrame = () => {
-      if (!this.ctx || !this.currentVideo) {
+      if (!this.ctx) {
         return;
       }
-      this.ctx.clearRect(0, 0, width, height);
-      this.ctx.fillStyle = "#ffffff";
-      this.ctx.fillRect(0, 0, width, height);
-      this.ctx.drawImage(this.currentVideo, 0, 0, width, height);
+      source.drawInto(this.ctx, width, height);
     };
 
+    // Draw the first frame synchronously so captureStream sees content
+    // immediately, then force the pixels to commit: on some webkit versions
+    // drawing to a freshly created canvas does not commit until something reads
+    // back, which would otherwise start the capture on a blank frame.
+    drawFrame();
+    this.ctx?.getImageData(0, 0, 1, 1);
+
+    const frameInterval = 1000 / this.fps;
+    this.lastDrawTime = performance.now();
+
     if (this.resolveTimerMode() === TimerMode.Raf && isRAFSupported()) {
-      // rAF fires at display rate; throttle draws to the requested FPS
+      // rAF fires at display rate; throttle draws to the requested FPS.
       const rafLoop = () => {
         const now = performance.now();
         if (now - this.lastDrawTime >= frameInterval) {
@@ -440,90 +275,8 @@ export class MediaMockClass {
       };
       this.rafId = requestAnimationFrame(rafLoop);
     } else {
-      this.intervalId = setInterval(drawFrame, frameInterval);
-    }
-  }
-
-  /**
-   * Start drawing loop for image using RequestAnimationFrame
-   * For static images, draws once and then relies on canvas stream
-   */
-  private startImageDrawingLoop(width: number, height: number): void {
-    const drawImage = () => {
-      if (!this.ctx || !this.currentImage) {
-        return;
-      }
-
-      this.currentImage.id = this.mediaMockImageId;
-      this.ctx.clearRect(0, 0, width, height);
-      this.ctx.fillStyle = "#ffffff";
-      this.ctx.fillRect(0, 0, width, height);
-
-      const { naturalWidth, naturalHeight } = this.currentImage;
-
-      // Validate dimensions to prevent divide by zero
-      if (
-        naturalHeight === 0 ||
-        height === 0 ||
-        !Number.isFinite(naturalWidth / naturalHeight) ||
-        !Number.isFinite(width / height)
-      ) {
-        return; // Skip drawing if dimensions are invalid
-      }
-
-      const imageAspect = naturalWidth / naturalHeight;
-      const canvasAspect = width / height;
-
-      let scaledWidth: number,
-        scaledHeight: number,
-        offsetX: number,
-        offsetY: number;
-
-      const safetyFactor = this.settings.canvasScaleFactor;
-
-      if (imageAspect > canvasAspect) {
-        // Image is wider (relative to height) than canvas
-        scaledWidth = width * safetyFactor;
-        scaledHeight = (width * safetyFactor) / imageAspect;
-        offsetX = (width - scaledWidth) / 2;
-        offsetY = (height - scaledHeight) / 2;
-      } else {
-        // Image is taller (relative to width) than canvas
-        scaledHeight = height * safetyFactor;
-        scaledWidth = height * safetyFactor * imageAspect;
-        offsetX = (width - scaledWidth) / 2;
-        offsetY = (height - scaledHeight) / 2;
-      }
-
-      this.ctx.drawImage(
-        this.currentImage,
-        offsetX,
-        offsetY,
-        scaledWidth,
-        scaledHeight,
-      );
-
-      // Schedule next draw via the resolved timer mode
-      if (this.resolveTimerMode() === TimerMode.Raf && isRAFSupported()) {
-        this.rafId = requestAnimationFrame(drawImage);
-      }
-    };
-
-    // Draw the first frame synchronously so captureStream sees content immediately.
-    drawImage();
-
-    // Force pixel data commitment by reading back one pixel. On some webkit versions,
-    // drawing a cached Image to a freshly-created canvas doesn't immediately commit
-    // the pixel data — a getImageData call flushes pending GPU commands before
-    // captureStream is started.
-    this.ctx?.getImageData(0, 0, 1, 1);
-
-    const frameInterval = 1000 / this.fps;
-    if (this.resolveTimerMode() === TimerMode.Raf && isRAFSupported()) {
-      // rAF chain already primed by the synchronous drawImage() call above
-    } else {
       // setInterval fires reliably even when rAF is throttled (e.g. webkit under xvfb)
-      this.intervalId = setInterval(drawImage, frameInterval);
+      this.intervalId = setInterval(drawFrame, frameInterval);
     }
   }
 
@@ -587,18 +340,19 @@ export class MediaMockClass {
       this.applyVisibleCanvasStyles(this.canvas);
     }
 
-    if (this.currentImage != null) {
-      if (this.currentImage.parentNode == null && document.body) {
-        document.body.append(this.currentImage);
+    const element = this.source?.element;
+    if (element != null) {
+      if (element.parentNode == null && document.body) {
+        document.body.append(element);
       }
-      this.applyVisibleImageStyles(this.currentImage);
+      showForDebug(element);
     }
 
     return this;
   }
 
   /**
-   * Hides the source canvas and the source image again (both stay in the DOM
+   * Hides the source canvas and the source element again (both stay in the DOM
    * offscreen so captureStream and webkit's decoded-pixel cache keep working).
    *
    * @public
@@ -611,31 +365,12 @@ export class MediaMockClass {
       this.applyHiddenCanvasStyles(this.canvas);
     }
 
-    if (this.currentImage != null) {
-      this.applyHiddenImageStyles(this.currentImage);
+    const element = this.source?.element;
+    if (element != null) {
+      hideOffscreen(element);
     }
 
     return this;
-  }
-
-  /**
-   * Positions the source image offscreen and invisible while keeping it in the
-   * DOM — some webkit versions evict a detached image's decoded pixel data from
-   * GPU memory, which would make drawImage produce blank frames.
-   */
-  private applyHiddenImageStyles(image: HTMLImageElement): void {
-    image.style.cssText =
-      "position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none";
-    image.setAttribute("aria-hidden", "true");
-  }
-
-  /**
-   * Restores the source image to its natural size and makes it visible with a
-   * red border (used by debug mode).
-   */
-  private applyVisibleImageStyles(image: HTMLImageElement): void {
-    image.style.cssText = "border:10px solid red";
-    image.removeAttribute("aria-hidden");
   }
 
   /**
@@ -777,18 +512,8 @@ export class MediaMockClass {
     this.currentStream?.stop?.(); // Stop the stream if needed
     this.currentStream = undefined;
 
-    if (this.currentVideo) {
-      this.currentVideo.pause();
-      this.currentVideo.src = "";
-      this.currentVideo = undefined;
-    }
-    if (this.currentImage) {
-      if (this.currentImage.parentNode) {
-        this.currentImage.remove();
-      }
-      this.currentImage.src = "";
-      this.currentImage = undefined;
-    }
+    this.source?.dispose?.();
+    this.source = undefined;
 
     // Clean up canvas and context
     if (this.canvas) {
