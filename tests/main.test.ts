@@ -60,14 +60,14 @@ describe("MediaMock", () => {
   });
 
   it("should set the image URL correctly", async () => {
-    await MediaMock.setMediaURL(imageUrl);
-    expect(MediaMock["settings"].mediaURL).toBe(imageUrl); // Access private property for testing
+    await MediaMock.setSource(imageUrl);
+    expect(MediaMock.settings.mediaURL).toBe(imageUrl); // Access private property for testing
   });
 
   it("should mock device correctly", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({
       video: {
@@ -83,7 +83,7 @@ describe("MediaMock", () => {
   it("should mock getSupportedConstraints", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const constraints = await navigator.mediaDevices.getSupportedConstraints();
 
@@ -100,7 +100,7 @@ describe("MediaMock", () => {
     // Initialize the mock with a specific device
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const newMediaDevice = createMediaDeviceInfo({
       deviceId: "5",
@@ -131,7 +131,7 @@ describe("MediaMock", () => {
     const nativeEnumerateDevices = MediaDevices.prototype.enumerateDevices;
 
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
     expect(MediaDevices.prototype.getUserMedia).not.toBe(nativeGetUserMedia);
 
     MediaMock.unmock();
@@ -147,7 +147,7 @@ describe("MediaMock", () => {
   it("should apply frameRate constraint", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { frameRate: 15 },
@@ -160,7 +160,7 @@ describe("MediaMock", () => {
   it("should apply resolution constraints", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { width: 1920, height: 1080 },
@@ -178,7 +178,7 @@ describe("MediaMock", () => {
   it("should append debug elements to the DOM", async () => {
     const device = getDeviceForBrowser();
     MediaMock.enableDebugMode().mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     await navigator.mediaDevices.getUserMedia({ video: true });
 
@@ -190,7 +190,7 @@ describe("MediaMock", () => {
   it("should keep the source canvas in the DOM but hidden when debug mode is disabled", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     await navigator.mediaDevices.getUserMedia({ video: true });
 
@@ -247,7 +247,7 @@ describe("MediaMock", () => {
       });
       return tracks;
     }).mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({ video: true });
     expect(stream.getVideoTracks()[0].getSettings().aspectRatio).toBe(2);
@@ -260,18 +260,18 @@ describe("MediaMock", () => {
     // Setup mock with initial image
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(initialImageUrl);
+    await MediaMock.setSource(initialImageUrl);
 
     // Request a stream
     const stream = await navigator.mediaDevices.getUserMedia({ video: true });
     expect(stream).toBeDefined();
-    expect(MediaMock["settings"].mediaURL).toBe(initialImageUrl);
+    expect(MediaMock.settings.mediaURL).toBe(initialImageUrl);
 
     // Change the media URL while stream is active
-    await MediaMock.setMediaURL(newMediaUrl);
+    await MediaMock.setSource(newMediaUrl);
 
     // Verify the URL was changed in settings
-    expect(MediaMock["settings"].mediaURL).toBe(newMediaUrl);
+    expect(MediaMock.settings.mediaURL).toBe(newMediaUrl);
 
     // Give time for the interval to update with new image
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -288,7 +288,7 @@ describe("MediaMock", () => {
     // Setup mock with initial image
     const device = getDeviceForBrowser();
     MediaMock.enableDebugMode().mock(device);
-    await MediaMock.setMediaURL(initialImageUrl);
+    await MediaMock.setSource(initialImageUrl);
 
     // Request a stream to start the drawing loop
     const stream = await navigator.mediaDevices.getUserMedia({ video: true });
@@ -310,7 +310,7 @@ describe("MediaMock", () => {
     expect(canvasData1.length).toBeGreaterThan(100);
 
     // Change the media URL while stream is active
-    await MediaMock.setMediaURL(newMediaUrl);
+    await MediaMock.setSource(newMediaUrl);
 
     // Wait for the drawing loop to update with new image
     await new Promise((resolve) => setTimeout(resolve, 200));
@@ -331,13 +331,13 @@ describe("MediaMock", () => {
     const scaleFactor = 0.8;
 
     MediaMock.setCanvasScaleFactor(scaleFactor);
-    expect(MediaMock["settings"].canvasScaleFactor).toBe(scaleFactor);
+    expect(MediaMock.settings.canvasScaleFactor).toBe(scaleFactor);
 
     MediaMock.setCanvasScaleFactor(1.5);
-    expect(MediaMock["settings"].canvasScaleFactor).toBe(1.5);
+    expect(MediaMock.settings.canvasScaleFactor).toBe(1.5);
 
     MediaMock.setCanvasScaleFactor(0.05);
-    expect(MediaMock["settings"].canvasScaleFactor).toBe(0.1);
+    expect(MediaMock.settings.canvasScaleFactor).toBe(0.1);
   });
 
   it("should mock video tracks capabilities", async () => {
@@ -350,7 +350,7 @@ describe("MediaMock", () => {
       });
       return tracks;
     }).mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({ video: true });
     expect(stream.getVideoTracks()[0].getCapabilities()).toEqual(
@@ -389,8 +389,8 @@ describe("MediaMock", () => {
     MediaMock.mock(device);
 
     // Test with image URL first (we know this works)
-    await MediaMock.setMediaURL(imageUrl);
-    expect(MediaMock["settings"].mediaURL).toBe(imageUrl);
+    await MediaMock.setSource(imageUrl);
+    expect(MediaMock.settings.mediaURL).toBe(imageUrl);
 
     // Request a stream to ensure basic functionality works with image
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -405,19 +405,19 @@ describe("MediaMock", () => {
     expect(stream.active).toBe(true);
 
     // Now test video URL (but don't trigger loading)
-    await MediaMock.setMediaURL(videoUrl);
-    expect(MediaMock["settings"].mediaURL).toBe(videoUrl);
+    await MediaMock.setSource(videoUrl);
+    expect(MediaMock.settings.mediaURL).toBe(videoUrl);
   });
 
-  it("should load media file before setMediaURL returns", async () => {
+  it("should load media file before setSource returns", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
 
-    // setMediaURL should wait for the image to load before returning
-    await MediaMock.setMediaURL(imageUrl);
+    // setSource should wait for the image to load before returning
+    await MediaMock.setSource(imageUrl);
 
     // Verify the URL is set
-    expect(MediaMock["settings"].mediaURL).toBe(imageUrl);
+    expect(MediaMock.settings.mediaURL).toBe(imageUrl);
 
     // Request a stream to ensure the media is ready
     const stream = await navigator.mediaDevices.getUserMedia({ video: true });
@@ -425,14 +425,14 @@ describe("MediaMock", () => {
     expect(stream.getVideoTracks().length).toBeGreaterThan(0);
   });
 
-  it("should reject setMediaURL if media fails to load", async () => {
+  it("should reject setSource if media fails to load", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
 
     const invalidUrl = "/assets/nonexistent-file-that-does-not-exist.png";
 
-    // setMediaURL should reject if the media fails to load
-    await expect(MediaMock.setMediaURL(invalidUrl)).rejects.toThrow();
+    // setSource should reject if the media fails to load
+    await expect(MediaMock.setSource(invalidUrl)).rejects.toThrow();
   });
 
   it("should allow configuring media load timeout", async () => {
@@ -440,11 +440,11 @@ describe("MediaMock", () => {
     MediaMock.mock(device);
 
     // Default timeout should be 60 seconds
-    expect(MediaMock["settings"].mediaTimeout).toBe(60 * 1000);
+    expect(MediaMock.settings.mediaTimeout).toBe(60 * 1000);
 
     // Should be able to set custom timeout
     MediaMock.setMediaTimeout(30 * 1000);
-    expect(MediaMock["settings"].mediaTimeout).toBe(30 * 1000);
+    expect(MediaMock.settings.mediaTimeout).toBe(30 * 1000);
 
     // Should reject invalid timeout values
     expect(() => MediaMock.setMediaTimeout(0)).toThrow(
@@ -455,8 +455,8 @@ describe("MediaMock", () => {
     );
 
     // Should still allow loading with custom timeout
-    await MediaMock.setMediaURL(imageUrl);
-    expect(MediaMock["settings"].mediaURL).toBe(imageUrl);
+    await MediaMock.setSource(imageUrl);
+    expect(MediaMock.settings.mediaURL).toBe(imageUrl);
   });
 
   // ===== RESOLUTION MATCHING TESTS =====
@@ -467,7 +467,7 @@ describe("MediaMock", () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
 
-    await expect(MediaMock.setMediaURL("")).rejects.toThrow(
+    await expect(MediaMock.setSource("")).rejects.toThrow(
       "Invalid mediaURL: must be a non-empty string",
     );
   });
@@ -476,7 +476,7 @@ describe("MediaMock", () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
 
-    await expect(MediaMock.setMediaURL("   ")).rejects.toThrow(
+    await expect(MediaMock.setSource("   ")).rejects.toThrow(
       "Invalid mediaURL: must be a non-empty string",
     );
   });
@@ -486,9 +486,9 @@ describe("MediaMock", () => {
     MediaMock.mock(device);
 
     // @ts-expect-error - intentionally passing invalid type
-    await expect(MediaMock.setMediaURL(null)).rejects.toThrow();
+    await expect(MediaMock.setSource(null)).rejects.toThrow();
     // @ts-expect-error - intentionally passing invalid type
-    await expect(MediaMock.setMediaURL(undefined)).rejects.toThrow();
+    await expect(MediaMock.setSource(undefined)).rejects.toThrow();
   });
 
   // ===== DEVICE MANAGEMENT TESTS =====
@@ -496,7 +496,7 @@ describe("MediaMock", () => {
   it("should handle enumerateDevices after mock", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const devices = await navigator.mediaDevices.enumerateDevices();
     expect(devices).toBeDefined();
@@ -507,7 +507,7 @@ describe("MediaMock", () => {
   it("should return consistent device info from enumerateDevices", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const devices1 = await navigator.mediaDevices.enumerateDevices();
     const devices2 = await navigator.mediaDevices.enumerateDevices();
@@ -525,7 +525,7 @@ describe("MediaMock", () => {
   it("should apply min/max constraints", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({
       video: {
@@ -545,7 +545,7 @@ describe("MediaMock", () => {
   it("should apply exact constraints", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({
       video: {
@@ -564,7 +564,7 @@ describe("MediaMock", () => {
   it("should be able to get multiple streams sequentially", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const stream1 = await navigator.mediaDevices.getUserMedia({ video: true });
     expect(stream1).toBeDefined();
@@ -581,7 +581,7 @@ describe("MediaMock", () => {
   it("should stop all tracks when stream is stopped", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({ video: true });
     const track = stream.getVideoTracks()[0];
@@ -598,7 +598,7 @@ describe("MediaMock", () => {
   it("should return device capabilities", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({ video: true });
     const track = stream.getVideoTracks()[0];
@@ -615,7 +615,7 @@ describe("MediaMock", () => {
   it("should return correct track settings", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({ video: true });
     const track = stream.getVideoTracks()[0];
@@ -633,7 +633,7 @@ describe("MediaMock", () => {
     const device = getDeviceForBrowser();
 
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     // Mock should be active
     expect(navigator.mediaDevices.getUserMedia).toBeDefined();
@@ -649,7 +649,7 @@ describe("MediaMock", () => {
 
     for (let i = 0; i < 3; i++) {
       MediaMock.mock(device);
-      await MediaMock.setMediaURL(imageUrl);
+      await MediaMock.setSource(imageUrl);
 
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       expect(stream.getVideoTracks().length).toBeGreaterThan(0);
@@ -663,7 +663,7 @@ describe("MediaMock", () => {
   it("should toggle debug mode independently", async () => {
     const device = getDeviceForBrowser();
     MediaMock.enableDebugMode().mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     // The canvas is always attached after the first stream so captureStream stays
     // stable; debug mode controls whether it is visually rendered.
@@ -703,7 +703,7 @@ describe("MediaMock", () => {
   it("should get FPS from constraints with frameRate object", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { frameRate: { ideal: 24 } },
@@ -717,7 +717,7 @@ describe("MediaMock", () => {
   it("should get FPS from constraints with number", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { frameRate: 20 },
@@ -733,7 +733,7 @@ describe("MediaMock", () => {
   it("should handle getUserMedia without video constraint", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({});
     expect(stream).toBeDefined();
@@ -742,7 +742,7 @@ describe("MediaMock", () => {
   it("should handle getUserMedia with false video constraint", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({ video: false });
     expect(stream).toBeDefined();
@@ -753,7 +753,7 @@ describe("MediaMock", () => {
   it("should apply aspect ratio constraint", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { aspectRatio: { ideal: 16 / 9 } },
@@ -772,8 +772,8 @@ describe("MediaMock", () => {
 
     // Test with different image
     const imageUrl2 = "/assets/florida_dl_front.png";
-    await MediaMock.setMediaURL(imageUrl2);
-    expect(MediaMock["settings"].mediaURL).toBe(imageUrl2);
+    await MediaMock.setSource(imageUrl2);
+    expect(MediaMock.settings.mediaURL).toBe(imageUrl2);
 
     const stream = await navigator.mediaDevices.getUserMedia({ video: true });
     expect(stream).toBeDefined();
@@ -787,7 +787,7 @@ describe("MediaMock", () => {
     const device2 = devices["Mac Desktop"];
 
     MediaMock.mock(device1);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     let stream = await navigator.mediaDevices.getUserMedia({ video: true });
     expect(stream.getVideoTracks().length).toBeGreaterThan(0);
@@ -806,14 +806,14 @@ describe("MediaMock", () => {
 
     // Test various scale factors
     MediaMock.setCanvasScaleFactor(0.5);
-    expect(MediaMock["settings"].canvasScaleFactor).toBe(0.5);
+    expect(MediaMock.settings.canvasScaleFactor).toBe(0.5);
 
     MediaMock.setCanvasScaleFactor(1.0);
-    expect(MediaMock["settings"].canvasScaleFactor).toBe(1.0);
+    expect(MediaMock.settings.canvasScaleFactor).toBe(1.0);
 
     // Test that scale factor below minimum is clamped
     MediaMock.setCanvasScaleFactor(0.05);
-    expect(MediaMock["settings"].canvasScaleFactor).toBe(0.1);
+    expect(MediaMock.settings.canvasScaleFactor).toBe(0.1);
   });
 
   // ===== SUPPORTED CONSTRAINTS TEST =====
@@ -860,7 +860,7 @@ describe("MediaMock", () => {
     // Multiple unmock cycles
     for (let i = 0; i < 2; i++) {
       MediaMock.mock(device);
-      await MediaMock.setMediaURL(imageUrl);
+      await MediaMock.setSource(imageUrl);
 
       // Should be mocked
       expect(navigator.mediaDevices.getUserMedia).toBeDefined();
@@ -879,16 +879,16 @@ describe("MediaMock", () => {
     MediaMock.mock(device);
 
     MediaMock.setMediaTimeout(100);
-    expect(MediaMock["settings"].mediaTimeout).toBe(100);
+    expect(MediaMock.settings.mediaTimeout).toBe(100);
 
-    await MediaMock.setMediaURL(imageUrl);
-    expect(MediaMock["settings"].mediaURL).toBe(imageUrl);
+    await MediaMock.setSource(imageUrl);
+    expect(MediaMock.settings.mediaURL).toBe(imageUrl);
   });
 
   it("should handle resolution with min/max constraints", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({
       video: {
@@ -906,7 +906,7 @@ describe("MediaMock", () => {
   it("should handle resolution with only min constraint", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({
       video: {
@@ -924,7 +924,7 @@ describe("MediaMock", () => {
   it("should handle resolution with only max constraint", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({
       video: {
@@ -942,7 +942,7 @@ describe("MediaMock", () => {
   it("should handle mixed exact and ideal constraints", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({
       video: {
@@ -960,7 +960,7 @@ describe("MediaMock", () => {
   it("should handle very high resolution requests", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({
       video: {
@@ -976,7 +976,7 @@ describe("MediaMock", () => {
   it("should handle very low resolution requests", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({
       video: {
@@ -992,7 +992,7 @@ describe("MediaMock", () => {
   it("should handle square aspect ratio request", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({
       video: {
@@ -1010,7 +1010,7 @@ describe("MediaMock", () => {
   it("should handle widescreen aspect ratio request", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({
       video: {
@@ -1028,12 +1028,12 @@ describe("MediaMock", () => {
     const device2 = devices["Samsung Galaxy M53"];
 
     MediaMock.mock(device1);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
     let stream = await navigator.mediaDevices.getUserMedia({ video: true });
     expect(stream).toBeDefined();
 
     MediaMock.mock(device2);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
     stream = await navigator.mediaDevices.getUserMedia({ video: true });
     expect(stream).toBeDefined();
   });
@@ -1043,13 +1043,13 @@ describe("MediaMock", () => {
   it("should handle video load error scenario", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     // Trigger an error condition by setting invalid video URL
     const invalidVideoUrl =
       "blob:http://invalid/invalid-video-that-does-not-exist";
     try {
-      await MediaMock.setMediaURL(invalidVideoUrl);
+      await MediaMock.setSource(invalidVideoUrl);
     } catch (error) {
       // Error is expected for invalid URL
       expect(error).toBeDefined();
@@ -1063,7 +1063,7 @@ describe("MediaMock", () => {
 
     // Attempt to load an image with a very short timeout
     try {
-      await MediaMock.setMediaURL(imageUrl);
+      await MediaMock.setSource(imageUrl);
     } catch (error) {
       // Timeout error is expected
       expect(error).toBeDefined();
@@ -1077,7 +1077,7 @@ describe("MediaMock", () => {
     const device = getDeviceForBrowser();
     // Test with device that has multiple resolutions
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const constraints: MediaStreamConstraints = {
       video: { width: { ideal: 1280 }, height: { ideal: 720 } },
@@ -1098,7 +1098,7 @@ describe("MediaMock", () => {
     };
 
     MediaMock.mock(landscapeDevice);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({ video: true });
     expect(stream).toBeDefined();
@@ -1108,7 +1108,7 @@ describe("MediaMock", () => {
     const device = getDeviceForBrowser();
     // Use the device as-is, which has multiple resolutions
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const constraints: MediaStreamConstraints = {
       video: { width: { ideal: 640 }, height: { ideal: 480 } },
@@ -1126,7 +1126,7 @@ describe("MediaMock", () => {
   it("should set stream track label to match selected device label", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({ video: true });
     expect(stream).toBeDefined();
@@ -1146,7 +1146,7 @@ describe("MediaMock", () => {
   it("should select front camera when facingMode user constraint is specified", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: "user" },
@@ -1173,7 +1173,7 @@ describe("MediaMock", () => {
   it("should select back camera when facingMode environment constraint is specified", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: "environment" },
@@ -1200,7 +1200,7 @@ describe("MediaMock", () => {
   it("should set stream track deviceId to match selected device", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({ video: true });
     expect(stream).toBeDefined();
@@ -1220,7 +1220,7 @@ describe("MediaMock", () => {
   it("should set stream track deviceId based on facingMode constraint", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: "user" },
@@ -1247,7 +1247,7 @@ describe("MediaMock", () => {
   it("should support facingMode as object with ideal constraint", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: { ideal: "environment" } },
@@ -1274,7 +1274,7 @@ describe("MediaMock", () => {
   it("should support facingMode as object with exact constraint", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: { exact: "user" } },
@@ -1316,7 +1316,7 @@ describe("MediaMock", () => {
     it("should honor a plain-string deviceId constraint", async () => {
       const device = getDeviceForBrowser();
       MediaMock.mock(device);
-      await MediaMock.setMediaURL(imageUrl);
+      await MediaMock.setSource(imageUrl);
 
       const target = pickTargetDevice(device);
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -1331,7 +1331,7 @@ describe("MediaMock", () => {
     it("should honor deviceId.exact", async () => {
       const device = getDeviceForBrowser();
       MediaMock.mock(device);
-      await MediaMock.setMediaURL(imageUrl);
+      await MediaMock.setSource(imageUrl);
 
       const target = pickTargetDevice(device);
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -1346,7 +1346,7 @@ describe("MediaMock", () => {
     it("should honor deviceId.ideal", async () => {
       const device = getDeviceForBrowser();
       MediaMock.mock(device);
-      await MediaMock.setMediaURL(imageUrl);
+      await MediaMock.setSource(imageUrl);
 
       const target = pickTargetDevice(device);
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -1361,7 +1361,7 @@ describe("MediaMock", () => {
     it("should honor deviceId.exact when passed as an array", async () => {
       const device = getDeviceForBrowser();
       MediaMock.mock(device);
-      await MediaMock.setMediaURL(imageUrl);
+      await MediaMock.setSource(imageUrl);
 
       const target = pickTargetDevice(device);
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -1376,7 +1376,7 @@ describe("MediaMock", () => {
     it("should prefer deviceId over facingMode when both are present", async () => {
       const device = getDeviceForBrowser();
       MediaMock.mock(device);
-      await MediaMock.setMediaURL(imageUrl);
+      await MediaMock.setSource(imageUrl);
 
       // Pick a front camera (user-facing) as the target, but pass facingMode: environment.
       // If deviceId wins (as it must in real browsers), the result is the front camera.
@@ -1403,7 +1403,7 @@ describe("MediaMock", () => {
     it("should fall back to facingMode when the requested deviceId is unknown", async () => {
       const device = getDeviceForBrowser();
       MediaMock.mock(device);
-      await MediaMock.setMediaURL(imageUrl);
+      await MediaMock.setSource(imageUrl);
 
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
@@ -1432,7 +1432,7 @@ describe("MediaMock", () => {
     it("should resolve different deviceIds across consecutive getUserMedia calls", async () => {
       const device = getDeviceForBrowser();
       MediaMock.mock(device);
-      await MediaMock.setMediaURL(imageUrl);
+      await MediaMock.setSource(imageUrl);
 
       const videoInputs = device.mediaDeviceInfo.filter(
         (deviceInfo) => deviceInfo.kind === "videoinput",
@@ -1465,7 +1465,7 @@ describe("MediaMock", () => {
     it("should expose deviceId in getSettings even without an explicit deviceId constraint", async () => {
       const device = getDeviceForBrowser();
       MediaMock.mock(device);
-      await MediaMock.setMediaURL(imageUrl);
+      await MediaMock.setSource(imageUrl);
 
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       const settings = stream.getVideoTracks()[0].getSettings();
@@ -1488,7 +1488,7 @@ describe("MediaMock", () => {
     it("should expose facingMode in getSettings when the device advertises one", async () => {
       const device = getDeviceForBrowser();
       MediaMock.mock(device);
-      await MediaMock.setMediaURL(imageUrl);
+      await MediaMock.setSource(imageUrl);
 
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "environment" },
@@ -1510,7 +1510,7 @@ describe("MediaMock", () => {
     it("should still expose width and height in getSettings", async () => {
       const device = getDeviceForBrowser();
       MediaMock.mock(device);
-      await MediaMock.setMediaURL(imageUrl);
+      await MediaMock.setSource(imageUrl);
 
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: 640, height: 480 },
@@ -1532,7 +1532,7 @@ describe("MediaMock", () => {
     it("should produce a <video> element whose intrinsic dimensions match the canvas", async () => {
       const device = getDeviceForBrowser();
       MediaMock.mock(device);
-      await MediaMock.setMediaURL(imageUrl);
+      await MediaMock.setSource(imageUrl);
 
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: 640, height: 480 },

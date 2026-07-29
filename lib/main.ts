@@ -52,6 +52,20 @@ function createDefaultMockOptions(): MockOptions {
   };
 }
 
+/**
+ * The subset of {@link Settings} a consumer can change directly. `mediaURL`,
+ * `device` and `constraints` are set by {@link MediaMockClass.setSource} and
+ * {@link MediaMockClass.mock} instead.
+ */
+export interface ConfigurableSettings {
+  /** @see Settings.canvasScaleFactor */
+  canvasScaleFactor?: number;
+  /** @see Settings.mediaTimeout */
+  mediaTimeout?: number;
+  /** @see Settings.timerMode */
+  timerMode?: TimerMode;
+}
+
 export interface Settings {
   /**
    * The media url to use for the mock. Video or image.
@@ -119,7 +133,7 @@ function isCanvasElement(value: unknown): value is HTMLCanvasElement {
  * import { MediaMock, devices } from "@eatsjobs/media-mock";
  *   // Configure and initialize MediaMock with default settings
  *   MediaMock.mock(devices["iPhone 12"]); // or devices["Samsung Galaxy M53"] for Android, "Mac Desktop" for desktop mediaDevice emulation
- *   await MediaMock.setMediaURL("./assets/640x480-sample.png");
+ *   await MediaMock.setSource("./assets/640x480-sample.png");
  *
  *   // Set up a video element to display the stream
  *   const videoElement = document.createElement("video");
@@ -132,7 +146,11 @@ function isCanvasElement(value: unknown): value is HTMLCanvasElement {
  * @class MediaMockClass
  */
 export class MediaMockClass {
-  public settings: Settings = {
+  /**
+   * Mutable internal configuration, exposed publicly as a frozen snapshot via
+   * {@link MediaMockClass.settings}.
+   */
+  private readonly state: Settings = {
     mediaURL:
       "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/w8AAgMBgQn2nAAAAABJRU5ErkJggg==",
     device: devices["iPhone 12"],
@@ -141,6 +159,48 @@ export class MediaMockClass {
     mediaTimeout: 60 * 1000, // 60 seconds
     timerMode: TimerMode.SetInterval,
   };
+
+  /**
+   * The current configuration, as a read-only snapshot. Frozen: assigning to it
+   * throws. Use {@link configure} (or the individual setters) to change it.
+   *
+   * @public
+   */
+  public get settings(): Readonly<Settings> {
+    return Object.freeze({ ...this.state });
+  }
+
+  /**
+   * Updates configuration. Omitted options keep their current value.
+   *
+   * @example
+   * ```ts
+   * MediaMock.configure({ canvasScaleFactor: 0.8, timerMode: TimerMode.Raf });
+   * ```
+   *
+   * @public
+   * @param {ConfigurableSettings} options
+   * @returns {this}
+   */
+  public configure(options: ConfigurableSettings): this {
+    if (options.canvasScaleFactor !== undefined) {
+      // Below ~0.1 the drawn image is too small to be a useful frame.
+      this.state.canvasScaleFactor = Math.max(0.1, options.canvasScaleFactor);
+    }
+
+    if (options.mediaTimeout !== undefined) {
+      if (options.mediaTimeout <= 0) {
+        throw new Error("Media timeout must be a positive number");
+      }
+      this.state.mediaTimeout = options.mediaTimeout;
+    }
+
+    if (options.timerMode !== undefined) {
+      this.state.timerMode = options.timerMode;
+    }
+
+    return this;
+  }
 
   private readonly mediaMockCanvasId = "media-mock-canvas";
 
@@ -210,7 +270,7 @@ export class MediaMockClass {
     this.source = frameSource;
 
     if (typeof source === "string") {
-      this.settings.mediaURL = source;
+      this.state.mediaURL = source;
     }
 
     if (this.debug && frameSource.element) {
@@ -237,8 +297,8 @@ export class MediaMockClass {
         throw new Error("Invalid mediaURL: must be a non-empty string");
       }
       return createSourceFromURL(source, {
-        timeoutMs: this.settings.mediaTimeout,
-        scaleFactor: () => this.settings.canvasScaleFactor,
+        timeoutMs: this.state.mediaTimeout,
+        scaleFactor: () => this.state.canvasScaleFactor,
       });
     }
 
@@ -257,23 +317,6 @@ export class MediaMockClass {
     throw new Error(
       "Invalid source: expected a media URL, an HTMLCanvasElement, or a FrameSource",
     );
-  }
-
-  /**
-   * The Image or the video that will be used as source.
-   *
-   * Superseded by {@link setSource}, which also accepts a canvas or a custom
-   * FrameSource.
-   *
-   * @public
-   * @param {string} mediaURL
-   * @returns {Promise<MediaMockClass>}
-   */
-  public async setMediaURL(mediaURL: string): Promise<MediaMockClass> {
-    if (!mediaURL || typeof mediaURL !== "string" || mediaURL.trim() === "") {
-      throw new Error("Invalid mediaURL: must be a non-empty string");
-    }
-    return this.setSource(mediaURL);
   }
 
   /**
@@ -303,7 +346,7 @@ export class MediaMockClass {
       () => {
         surface.paint(source);
       },
-      { fps: this.fps, mode: this.settings.timerMode },
+      { fps: this.fps, mode: this.state.timerMode },
     );
     surface.commitPixels();
   }
@@ -315,7 +358,7 @@ export class MediaMockClass {
    * @param {MockMediaDeviceInfo} newDevice
    */
   public addMockDevice(newDevice: MockMediaDeviceInfo): typeof MediaMock {
-    this.settings.device.mediaDeviceInfo.push(newDevice);
+    this.state.device.mediaDeviceInfo.push(newDevice);
     this.triggerDeviceChange();
     return this;
   }
@@ -327,8 +370,8 @@ export class MediaMockClass {
    * @param {string} deviceId
    */
   public removeMockDevice(deviceId: string): typeof MediaMock {
-    this.settings.device.mediaDeviceInfo =
-      this.settings.device.mediaDeviceInfo.filter(
+    this.state.device.mediaDeviceInfo =
+      this.state.device.mediaDeviceInfo.filter(
         (device) => device.deviceId !== deviceId,
       );
     this.triggerDeviceChange();
@@ -410,8 +453,8 @@ export class MediaMockClass {
   ): typeof MediaMock {
     // Clone the config so addMockDevice/removeMockDevice never mutate the
     // caller's object (the exported presets are shared across tests).
-    this.settings.device = cloneDeviceConfig(device);
-    this.settings.constraints = this.settings.device.supportedConstraints;
+    this.state.device = cloneDeviceConfig(device);
+    this.state.constraints = this.state.device.supportedConstraints;
 
     if (!MediaDevicesPatcher.isSupported()) {
       console.warn(
@@ -431,7 +474,7 @@ export class MediaMockClass {
     if (options?.mediaDevices.getSupportedConstraints) {
       this.patcher.patch(
         "getSupportedConstraints",
-        () => this.settings.constraints,
+        () => this.state.constraints,
       );
     }
 
@@ -494,9 +537,8 @@ export class MediaMockClass {
    * @param {number} factor - Scale factor between 0 and N
    * @returns {typeof MediaMock}
    */
-  public setCanvasScaleFactor(factor: number): typeof MediaMock {
-    this.settings.canvasScaleFactor = Math.max(0.1, factor);
-    return this;
+  public setCanvasScaleFactor(factor: number): this {
+    return this.configure({ canvasScaleFactor: factor });
   }
 
   /**
@@ -506,12 +548,8 @@ export class MediaMockClass {
    * @param {number} timeoutMs - Timeout in milliseconds (default: 60000 = 60 seconds)
    * @returns {typeof MediaMock}
    */
-  public setMediaTimeout(timeoutMs: number): typeof MediaMock {
-    if (timeoutMs <= 0) {
-      throw new Error("Media timeout must be a positive number");
-    }
-    this.settings.mediaTimeout = timeoutMs;
-    return this;
+  public setMediaTimeout(timeoutMs: number): this {
+    return this.configure({ mediaTimeout: timeoutMs });
   }
 
   /**
@@ -521,9 +559,8 @@ export class MediaMockClass {
    * @param {TimerMode} mode - TimerMode.Auto | TimerMode.Raf | TimerMode.SetInterval
    * @returns {typeof MediaMock}
    */
-  public setTimerMode(mode: TimerMode): typeof MediaMock {
-    this.settings.timerMode = mode;
-    return this;
+  public setTimerMode(mode: TimerMode): this {
+    return this.configure({ timerMode: mode });
   }
 
   /**
@@ -563,7 +600,7 @@ export class MediaMockClass {
    * rejecting — that is what real browsers do before permission is granted.
    */
   private enumerateMockDevices(): MockMediaDeviceInfo[] {
-    return listDevices(this.settings.device, {
+    return listDevices(this.state.device, {
       redacted: this.simulatedGetUserMediaError?.name === "NotAllowedError",
     });
   }
@@ -585,7 +622,7 @@ export class MediaMockClass {
     // Load the default media source on first use, so getUserMedia works with no
     // explicit setSource() call.
     if (!this.source) {
-      await this.setSource(this.settings.mediaURL);
+      await this.setSource(this.state.mediaURL);
     }
     const source = this.source as FrameSource;
 
@@ -593,7 +630,7 @@ export class MediaMockClass {
 
     const requested = resolveResolution(
       constraints,
-      this.settings.device.videoResolutions,
+      this.state.device.videoResolutions,
       isPortraitViewport(),
     );
 
@@ -626,7 +663,7 @@ export class MediaMockClass {
     const videoTracks = canvasStream?.getVideoTracks() ?? [];
 
     // An explicit deviceId wins, then facingMode, then the first videoinput.
-    const videoDevice = selectVideoDevice(this.settings.device, {
+    const videoDevice = selectVideoDevice(this.state.device, {
       deviceId: extractDeviceId(constraints),
       facingMode: extractFacingMode(constraints),
     });
@@ -636,7 +673,7 @@ export class MediaMockClass {
         device: videoDevice,
         fps: this.fps,
         resolution: this.resolution,
-        deviceResolutions: this.settings.device.videoResolutions,
+        deviceResolutions: this.state.device.videoResolutions,
       });
     }
 
@@ -659,4 +696,28 @@ export {
   // Defined in ./drawingLoop but part of the public API since 1.3.0.
   TimerMode,
 };
+/** The shared instance, and the one the documentation uses. */
 export const MediaMock: MediaMockClass = new MediaMockClass();
+
+/**
+ * Creates an independent MediaMock instance.
+ *
+ * Useful in tests: two instances share no configuration, device list, source or
+ * simulated error, so state cannot leak between test files through the shared
+ * singleton. `navigator.mediaDevices` is itself global, so only one instance
+ * should be mocking it at a time.
+ *
+ * @example
+ * ```ts
+ * const mock = createMediaMock();
+ * mock.mock(devices["iPhone 12"]);
+ * await mock.setSource("./assets/frame.png");
+ * mock.unmock();
+ * ```
+ *
+ * @export
+ * @returns {MediaMockClass}
+ */
+export function createMediaMock(): MediaMockClass {
+  return new MediaMockClass();
+}

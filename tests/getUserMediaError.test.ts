@@ -14,7 +14,7 @@ describe("getUserMedia error simulation", () => {
 
   it("should reject getUserMedia with a DOMException carrying the simulated error name", async () => {
     MediaMock.mock(devices["iPhone 12"]);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     MediaMock.simulateGetUserMediaError("NotAllowedError");
 
@@ -75,7 +75,7 @@ describe("getUserMedia error simulation", () => {
 
   it("should stream normally again after clearGetUserMediaError", async () => {
     MediaMock.mock(devices["iPhone 12"]);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
     MediaMock.simulateGetUserMediaError("NotAllowedError");
 
     MediaMock.clearGetUserMediaError();
@@ -134,7 +134,7 @@ describe("getUserMedia error simulation", () => {
 
     MediaMock.unmock();
     MediaMock.mock(devices["iPhone 12"]);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({ video: true });
     expect(stream.getVideoTracks().length).toBeGreaterThan(0);
