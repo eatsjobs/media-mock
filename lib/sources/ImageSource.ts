@@ -1,5 +1,5 @@
+import { hideOffscreen } from "../debugView";
 import { loadImage } from "../loadImage";
-import { hideOffscreen } from "./elementVisibility";
 import type { FrameSource } from "./FrameSource";
 
 /** Id given to the source image, so debug tooling can find it. */
