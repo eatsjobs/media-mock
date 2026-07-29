@@ -84,6 +84,14 @@ export default defineConfig({
         },
         // Serves tests/assets fixtures; not copied anywhere by the library build.
         publicDir: "public",
+        optimizeDeps: {
+          // `three` is imported only by the demo (`src/main.ts`), never by a
+          // test, but Vite still discovers it during the run. That triggers a
+          // re-optimize and a page reload, which wedges the run on a cold cache
+          // — i.e. always in CI. Excluding it keeps it out of pre-bundling
+          // altogether, so no reload can happen mid-run.
+          exclude: ["three"],
+        },
       },
     ],
     coverage: {
