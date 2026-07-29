@@ -1,5 +1,109 @@
 # @eatsjobs/media-mock
 
+## 2.0.0
+
+### Major Changes
+
+- 9441a39: **Breaking:** `setMediaURL()` is replaced by `setSource()`, and `settings` is now read-only.
+
+  ```diff
+  -await MediaMock.setMediaURL("./assets/frame.png");
+  +await MediaMock.setSource("./assets/frame.png");
+
+  -MediaMock.settings.canvasScaleFactor = 0.8;
+  +MediaMock.configure({ canvasScaleFactor: 0.8 });
+  ```
+
+  `setSource()` accepts everything `setMediaURL` did, plus an `HTMLCanvasElement` or a custom `FrameSource`. `settings` remains readable and is now a frozen snapshot, so an accidental assignment throws instead of being silently ignored; `setCanvasScaleFactor`, `setMediaTimeout` and `setTimerMode` keep working as shorthands for `configure()`.
+
+  Added `createMediaMock()`, which returns an independent instance. Two instances share no configuration, device list, source or simulated error, so state cannot leak between test files through the shared singleton — the cause of two bugs fixed in 1.4.0. `MediaMock` remains the default export and the documented path.
+
+  Nothing else changes: `mock`, `unmock`, `enableDebugMode`, `addMockDevice`, `setMockedVideoTracksHandler`, `simulateGetUserMediaError`, `TimerMode` and `devices` all behave as before.
+
+### Minor Changes
+
+- f156a24: Stream a canvas you render into, so a WebGL/Three.js 3D scene can act as the mock camera feed.
+
+  ```typescript
+  const renderer = new THREE.WebGLRenderer();
+  renderer.setSize(1280, 720);
+
+  MediaMock.mock(devices["Mac Desktop"]);
+  await MediaMock.setSource(renderer.domElement);
+
+  const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+  // every frame is the live 3D scene
+  ```
+
+  The canvas is captured as-is: MediaMock creates no canvas, acquires no rendering context (a WebGL canvas has none to give), and runs no drawing loop — your render loop drives the frames. It is never resized (that would clear the WebGL drawing buffer and desynchronise a renderer's size bookkeeping), never restyled or moved in the DOM, and never removed by `unmock()`. The track reports the canvas's real pixel size; `frameRate` constraints still apply.
+
+  New `setSource()` accepts a media URL, an `HTMLCanvasElement`, or your own `FrameSource` — now an exported type, so procedural sources such as synthetic test patterns are possible:
+
+  ```typescript
+  import { MediaMock, type FrameSource } from "@eatsjobs/media-mock";
+
+  const pattern: FrameSource = {
+    size: { width: 640, height: 480 },
+    drawInto(ctx, width, height) {
+      ctx.fillStyle = "#ff00ff";
+      ctx.fillRect(0, 0, width, height);
+    },
+  };
+  await MediaMock.setSource(pattern);
+  ```
+
+  `setMediaURL()` keeps working unchanged; it now delegates to `setSource()`.
+
+### Patch Changes
+
+- e6ad2eb: Complete the split of `MediaMockClass` into focused modules.
+
+  - `lib/captureSurface.ts` — owns the canvas `captureStream()` runs on, and the distinction between one created here and one borrowed from a source. Borrowed canvases are never styled, moved or removed; the webkit-specific reasons for attaching an owned canvas and for reading a pixel back before capture now live next to the code that does it.
+  - `lib/drawingLoop.ts` — the repaint timer, including `TimerMode` and the rAF-versus-`setInterval` decision. `TimerMode` is re-exported from the entry point, so `import { TimerMode }` is unchanged.
+  - `lib/debugView.ts` — all show/hide styling for the canvas and source elements, replacing `lib/sources/elementVisibility.ts`.
+
+  `lib/main.ts` drops from 820 to 660 lines.
+
+  The timer logic gains unit tests it never had: mode resolution including the hidden-page and missing-rAF fallbacks, the loop's immediate first draw, interval cadence, rAF throttling, restart and teardown.
+
+- 7ff113e: Fix `getUserMedia()` throwing a `TypeError` when the device config lists no `videoResolutions`, and extract constraint parsing and resolution matching into pure internal modules.
+
+  A `DeviceConfig` with an empty `videoResolutions` array made `getUserMedia()` fail with `Cannot read properties of undefined (reading 'resolution')`: the best-fit search indexed into an empty scored list, and the fallback that was supposed to handle this case sat behind it as unreachable code. Such a config now resolves to 640x480 (swapped to 480x640 in portrait).
+
+  Internal restructuring, with no public API change:
+
+  - `lib/constraints.ts` — one unwrapping implementation for constrainable values, replacing four near-duplicate copies that each re-derived `exact`/`ideal`/`max` handling. That duplication is what allowed `frameRate: { exact: n }` to be ignored in an earlier release.
+  - `lib/resolution.ts` — resolution matching as a pure function taking orientation as an argument instead of reading `window`, and never mutating the caller's resolution list.
+
+  Both modules are DOM-free and covered by a new node-environment Vitest project (`tests/unit/**`), so 30 assertions that previously required booting a browser now run in about 100ms. Seven browser tests that reached into private methods and could only assert "defined and greater than zero" were replaced by unit tests pinning exact expected resolutions.
+
+- 1587ed2: Extract device selection, track decoration and prototype patching out of `MediaMockClass`. Internal restructuring with no public API change.
+
+  - `lib/deviceRegistry.ts` — `cloneDeviceConfig`, `selectVideoDevice` and `listDevices` as pure functions. Device selection previously lived partly inline in `getMockStream` and partly in a private method; it is now one function with node tests covering deviceId precedence, the "last matching camera wins" rule for `facingMode`, unsatisfiable requests, and configs with no video devices.
+  - `lib/track.ts` — everything that makes a canvas-capture track look like a camera track: label, id, `getCapabilities` and the `getSettings` fill-ins.
+  - `lib/patchMediaDevices.ts` — `MediaDevices.prototype` patching and restoration, including the rule that the native implementation is captured only on the first patch so repeated `mock()` calls cannot lose it.
+
+  Every test that reached into library internals is now gone: the last one asserted an internal map was empty after `unmock()`, and instead asserts the observable contract — that `MediaDevices.prototype` holds the native methods again.
+
+  `lib/track.ts` reaches full statement coverage in the process: its label/id/settings decoration and both capabilities fallbacks previously had only incidental coverage, and the fallback used when a device declares no capabilities of its own was never executed at all. `setTimerMode` also gains an end-to-end test across all three timer modes, having had none. Coverage rises from 88.7% to 93.1% of statements and from 75.3% to 83.0% of branches.
+
+- f92ca58: Fix the test run hanging on a cold Vite cache.
+
+  `three`, used only by the demo page, was being picked up by Vite's dependency optimizer during the browser test run. The resulting re-optimize forced a page reload mid-run, and Vitest wedged instead of finishing — every test had already passed. It only showed up in CI, where the Vite cache is always cold; locally the cache was warm from running the dev server.
+
+  The test config now excludes `three` from pre-bundling, and the demo imports it lazily so it is not a static dependency of the page entry.
+
+- e94af65: Replace the branching between image and video media with a `FrameSource` abstraction. Internal restructuring with no public API change.
+
+  `MediaMockClass` held `currentImage` and `currentVideo` side by side and re-derived which one was live by re-parsing `settings.mediaURL`, giving 42 branches spread across `setMediaURL`, the drawing loops, debug mode and teardown. Media loading, DOM attachment, per-frame painting and cleanup now live in the source that owns them:
+
+  - `lib/sources/ImageSource.ts` — letterboxed drawing, and the attached-to-DOM workaround that keeps webkit from evicting decoded pixels
+  - `lib/sources/VideoSource.ts` — fill-the-canvas drawing of a looping video
+  - `lib/sources/mediaType.ts` — `isVideoURL`, now DOM-free and unit-tested in node
+  - `lib/sources/loadVideo.ts` — video element creation and first-frame wait
+
+  The two near-identical drawing loops collapse into one that asks the source to paint. Frame rate throttling and the first-frame-plus-readback priming (a webkit fix that previously applied only to images) now apply to every source, and `lib/main.ts` drops from 1129 to 854 lines.
+
 ## 1.4.1
 
 ### Patch Changes
