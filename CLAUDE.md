@@ -17,22 +17,27 @@ This is `@eatsjobs/media-mock`, a JavaScript library that simulates media device
 
 ### Key Concepts
 
-1. **Canvas-based streaming**: Uses HTML5 Canvas to simulate video streams from static images or video files
+1. **Frame sources**: A `FrameSource` either paints into a canvas MediaMock owns (`lib/sources/ImageSource.ts`, `VideoSource.ts`) or exposes a canvas it renders itself, which is captured directly (`CanvasSource.ts`). The second kind is how a consumer's WebGL/Three.js scene becomes the feed; such a canvas is never resized, restyled, moved or removed.
 2. **Device orientation handling**: Automatically adjusts resolution based on device orientation (portrait/landscape)
 3. **Browser API mocking**: Replaces `navigator.mediaDevices` methods with mock implementations
 4. **Video track customization**: Supports custom handlers for video tracks via `setMockedVideoTracksHandler`
 
 ### API Design Pattern
 
-The library uses a fluent/chaining API:
+The library uses a fluent/chaining API. `settings` is a read-only snapshot; configuration is written through `configure()` (or the single-option setters, which delegate to it):
 
 ```typescript
 MediaMock
   .enableDebugMode()
+  .configure({ timerMode: TimerMode.SetInterval })
   .mock(devices["iPhone 12"]);
 
-await MediaMock.setMediaURL("./assets/image.png")
+await MediaMock.setSource("./assets/image.png");   // URL, canvas, or FrameSource
 ```
+
+`createMediaMock()` returns an independent instance for tests that need isolation from the shared singleton.
+
+Breaking changes since 1.x are documented in `MIGRATION.md`, which must be updated alongside any further public API change.
 
 ## Development Commands
 
@@ -42,7 +47,7 @@ This project uses **pnpm** as its package manager (pinned via the `packageManage
 # Install dependencies
 pnpm install
 
-# Development server with live reload
+# Development server with live reload — serves the demo in index.html + src/main.ts
 pnpm dev
 
 # Build the library (TypeScript compilation + Vite bundling)
@@ -57,6 +62,16 @@ pnpm test-coverage
 # Type checking for package compatibility
 pnpm check-types
 ```
+
+## Demo App
+
+`pnpm dev` serves `index.html` with `src/main.ts`, which exercises the library end to end and doubles as manual verification:
+
+- **Video file** — a video drawn onto a canvas MediaMock owns
+- **Three.js scene** — a rotating cube whose `WebGLRenderer` canvas is captured directly, demonstrating `setSource(canvas)`
+- **Simulate denied** — `simulateGetUserMediaError("NotAllowedError")`, showing the rejection and redacted `enumerateDevices`
+
+`three` is a devDependency used only here; it never reaches the published bundle.
 
 ## Testing Architecture
 

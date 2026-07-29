@@ -26,12 +26,14 @@ Can also be used as browser extension please have a look at this repo [https://g
   - [Streaming Your Own Canvas (3D scenes)](#streaming-your-own-canvas-3d-scenes)
   - [Simulating Errors](#simulating-errors)
   - [Creating Custom Mock Devices](#creating-custom-mock-devices)
+- [Migrating to 2.0](#migrating-to-20) · [full guide](./MIGRATION.md)
 - [API Documentation](#api-documentation)
   - [MediaMock](#mediamock)
+  - [createMediaMock](#createmediamock)
   - [TimerMode](#timermode)
   - [GetUserMediaErrorName](#getusermediaerrorname)
   - [createMediaDeviceInfo](#createmediadeviceinfo)
-  - [Settings](#settings)
+  - [Settings and ConfigurableSettings](#settings)
   - [MockOptions](#mockoptions)
   - [DeviceConfig](#deviceconfig)
 - [Debugging](#debugging)
@@ -49,6 +51,7 @@ Can also be used as browser extension please have a look at this repo [https://g
 - **Custom Mock Devices**: Build your own `MediaDeviceInfo` entries (with capabilities like `torch`, `zoom`, etc.) via `createMediaDeviceInfo`.
 - **Error Simulation**: Make `getUserMedia` reject with realistic errors (`NotAllowedError`, `NotFoundError`, `OverconstrainedError`, ...) to test permission-denied and no-camera paths.
 - **Bring Your Own Canvas**: Stream a canvas you render into — a WebGL/Three.js 3D scene, or procedural frames via a custom `FrameSource`.
+- **Isolated Instances**: `createMediaMock()` gives each test file its own instance, so configuration and device state cannot leak between them.
 
 ---
 
@@ -80,7 +83,7 @@ Include directly in your HTML via [jsDelivr](https://www.jsdelivr.com/) or [unpk
 <script src="https://cdn.jsdelivr.net/npm/@eatsjobs/media-mock"></script>
 
 <!-- Specific version -->
-<script src="https://cdn.jsdelivr.net/npm/@eatsjobs/media-mock@1.3.1"></script>
+<script src="https://cdn.jsdelivr.net/npm/@eatsjobs/media-mock@2.0.0"></script>
 ```
 
 **unpkg**:
@@ -90,7 +93,7 @@ Include directly in your HTML via [jsDelivr](https://www.jsdelivr.com/) or [unpk
 <script src="https://unpkg.com/@eatsjobs/media-mock"></script>
 
 <!-- Specific version -->
-<script src="https://unpkg.com/@eatsjobs/media-mock@1.3.1"></script>
+<script src="https://unpkg.com/@eatsjobs/media-mock@2.0.0"></script>
 ```
 
 When loaded via CDN, `MediaMock` and `devices` are available on the global `window.MediaMock` object:
@@ -101,7 +104,7 @@ When loaded via CDN, `MediaMock` and `devices` are available on the global `wind
   const { MediaMock, devices } = window.MediaMock;
 
   MediaMock.mock(devices["iPhone 12"]);
-  await MediaMock.setMediaURL("./assets/640x480-sample.png");
+  await MediaMock.setSource("./assets/640x480-sample.png");
 </script>
 ```
 
@@ -116,7 +119,7 @@ import { MediaMock, devices } from "@eatsjobs/media-mock";
 
 // Configure and initialize MediaMock with default settings
 MediaMock.mock(devices["iPhone 12"]); // or devices["Samsung Galaxy M53"] for Android, "Mac Desktop" for desktop mediaDevice emulation
-await MediaMock.setMediaURL("./assets/640x480-sample.png");
+await MediaMock.setSource("./assets/640x480-sample.png");
 
 // Set up a video element to display the stream
 const videoElement = document.createElement("video");
@@ -136,7 +139,7 @@ You can set a specific device and define video constraints such as resolution an
 
 ```typescript
 MediaMock.mock(devices["Mac Desktop"]);
-await MediaMock.setMediaURL("./assets/640x480-sample.png");
+await MediaMock.setSource("./assets/640x480-sample.png");
 ```
 
 ## Configuring Media Load Timeout
@@ -150,16 +153,17 @@ MediaMock.mock(devices["iPhone 12"]);
 
 // Set a custom timeout of 30 seconds (useful for faster tests)
 MediaMock.setMediaTimeout(30 * 1000);
-await MediaMock.setMediaURL("./assets/640x480-sample.png");
+await MediaMock.setSource("./assets/640x480-sample.png");
 
 // Or set a longer timeout for slow networks
 MediaMock.setMediaTimeout(5 * 60 * 1000); // 5 minutes
-await MediaMock.setMediaURL("./assets/video.mp4");
+await MediaMock.setSource("./assets/video.mp4");
 
-// Method chaining is supported
-MediaMock
-  .setMediaTimeout(45 * 1000)
-  .setCanvasScaleFactor(0.8);
+// Or set several options at once
+MediaMock.configure({
+  mediaTimeout: 45 * 1000,
+  canvasScaleFactor: 0.8,
+});
 ```
 
 ## Controlling the Drawing Timer (headless/CI)
@@ -177,7 +181,7 @@ MediaMock
   .setTimerMode(TimerMode.SetInterval) // default — robust in headless CI
   .mock(devices["iPhone 12"]);
 
-await MediaMock.setMediaURL("./assets/640x480-sample.png");
+await MediaMock.setSource("./assets/640x480-sample.png");
 ```
 
 ## Streaming Your Own Canvas (3D scenes)
@@ -217,7 +221,7 @@ Four guarantees for a canvas you supply:
 
 ### Any source: `setSource`
 
-`setSource` also accepts media URLs, and replaces `setMediaURL`:
+`setSource` is the single entry point for every kind of source:
 
 ```typescript
 await MediaMock.setSource("./assets/barcode.png");   // image
@@ -330,6 +334,22 @@ const extraCamera = createMediaDeviceInfo({
 MediaMock.addMockDevice(extraCamera); // fires a `devicechange` event
 ```
 
+## Migrating to 2.0
+
+Two breaking changes, both mechanical:
+
+```diff
+-await MediaMock.setMediaURL("./assets/frame.png");
++await MediaMock.setSource("./assets/frame.png");
+
+-MediaMock.settings.canvasScaleFactor = 0.8;
++MediaMock.configure({ canvasScaleFactor: 0.8 });
+```
+
+TypeScript flags both, so a clean type-check means the upgrade is complete. Everything else is unchanged. See **[MIGRATION.md](./MIGRATION.md)** for the full guide, including why each change was made and the optional move to isolated instances via `createMediaMock()`.
+
+---
+
 ## API Documentation
 
 ### `MediaMock`
@@ -343,12 +363,6 @@ Sets what the mocked camera streams, and returns the instance for chaining. See 
 - **source**: a media URL (image or video, chosen by extension), an `HTMLCanvasElement` you render into, or your own `FrameSource`.
 
 A failed load leaves the previous source and any running stream untouched.
-
-#### `async setMediaURL(path: string): Promise<MediaMock>`
-
-Sets a custom image URL or video URL to be used as the source and returns the instance for chaining. Equivalent to `setSource(path)`, which supersedes it.
-
-- **path**: `string` - Path to the image or video file.
 
 #### `FrameSource`
 
@@ -407,6 +421,30 @@ Makes every subsequent `getUserMedia` call reject with the given error instead o
 
 Stops simulating a `getUserMedia` failure, so subsequent calls return a mock stream again and `enumerateDevices()` reports full device info.
 
+#### `configure(options: ConfigurableSettings): MediaMock`
+
+Updates configuration; omitted options keep their current value. Returns the instance for chaining.
+
+```typescript
+MediaMock.configure({
+  canvasScaleFactor: 0.8,          // clamped to a minimum of 0.1
+  mediaTimeout: 30_000,            // must be positive
+  timerMode: TimerMode.SetInterval,
+});
+```
+
+`setCanvasScaleFactor`, `setMediaTimeout` and `setTimerMode` remain as shorthands for a single option each.
+
+#### `settings: Readonly<Settings>`
+
+The current configuration, as a frozen snapshot. Readable as before; assigning to it throws. Use `configure()` to change it.
+
+```typescript
+MediaMock.settings.mediaURL;                     // "./assets/frame.png"
+MediaMock.settings.canvasScaleFactor = 0.5;      // TypeError
+MediaMock.configure({ canvasScaleFactor: 0.5 }); // do this instead
+```
+
 #### `addMockDevice(device: MockMediaDeviceInfo): MediaMock`
 
 Adds a new mock device to the current device configuration and triggers a `devicechange` event.
@@ -435,6 +473,28 @@ Initializes the mock with a specific device configuration and enables specified 
 #### `unmock(): MediaMock`
 
 Restores original `navigator.mediaDevices` methods by removing the mock properties and stops any ongoing mock stream. Useful for cleanup after testing.
+
+---
+
+### `createMediaMock()`
+
+Creates an independent instance. Two instances share no configuration, device list, source or simulated error, so state cannot leak between test files through the shared singleton.
+
+```typescript
+import { createMediaMock, devices } from "@eatsjobs/media-mock";
+
+const mock = createMediaMock();
+
+beforeEach(() => {
+  mock.mock(devices["iPhone 12"]);
+});
+
+afterEach(() => {
+  mock.unmock();
+});
+```
+
+`navigator.mediaDevices` is itself global, so only one instance should be mocking it at a time.
 
 ---
 
@@ -534,14 +594,24 @@ interface MockOptions {
 
 ### `Settings`
 
-Interface that contains the mock settings for media URL, device configuration, and video constraints.
+The shape of `MediaMock.settings`, which is a **read-only** snapshot — see [`settings`](#settings-readonlysettings). Write with [`configure()`](#configureoptions-configurablesettings-mediamock).
 
-- **mediaURL**: `string` - The URL of the image or video used as the media source.
+- **mediaURL**: `string` *(read-only)* - The URL of the image or video used as the media source. Set by `setSource()`; empty of meaning when the source is a canvas or custom `FrameSource`.
 - **device**: `DeviceConfig` - Specifies the configuration for the mock device, such as resolution and media information.
 - **constraints**: `SupportedConstraints` - The constraint names reported by the mocked `getSupportedConstraints()`. Kept in sync with the mocked device by `mock()`.
-- **canvasScaleFactor**: `number` - Scale factor for the image in the canvas (0.1-1.0).
-- **mediaTimeout**: `number` - Timeout for media loading in milliseconds (default: 60000 = 60 seconds). Applied to both images and videos.
-- **timerMode**: `TimerMode` - Timer strategy for the canvas drawing loop (default: `TimerMode.SetInterval`). See [TimerMode](#timermode).
+- **canvasScaleFactor**: `number` - Scale factor for the image in the canvas, clamped to a minimum of 0.1. Configurable.
+- **mediaTimeout**: `number` - Timeout for media loading in milliseconds (default: 60000 = 60 seconds). Applied to both images and videos. Must be positive. Configurable.
+- **timerMode**: `TimerMode` - Timer strategy for the canvas drawing loop (default: `TimerMode.SetInterval`). See [TimerMode](#timermode). Configurable.
+
+The three marked *configurable* are the members of `ConfigurableSettings`, the argument to `configure()`:
+
+```typescript
+interface ConfigurableSettings {
+  canvasScaleFactor?: number;
+  mediaTimeout?: number;
+  timerMode?: TimerMode;
+}
+```
 
 ---
 
@@ -588,7 +658,7 @@ MediaMock
   .enableDebugMode()
   .mock(devices["iPhone 12"]); // or devices["Samsung Galaxy M53"] for Android, "Mac Desktop" for desktop mediaDevice emulation
 
-await MediaMock.setMediaURL("./assets/640x480-sample.png");
+await MediaMock.setSource("./assets/640x480-sample.png");
 
 // Set up a video element to display the stream
 const videoElement = document.createElement("video");

@@ -4,23 +4,70 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Vite App</title>
+    <title>media-mock demo</title>
     <style>
       html,
       body {
         margin: 0;
         padding: 0;
         min-height: 100dvh;
+        background: #0b1020;
+        color: #e8ecf8;
+        font: 14px/1.4 system-ui, sans-serif;
       }
 
       video {
         width: 100%;
         height: 100dvh;
+        object-fit: contain;
+        display: block;
+      }
+
+      #controls {
+        position: fixed;
+        inset: auto 0 0 0;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        padding: 12px 16px;
+        background: rgba(11, 16, 32, 0.85);
+        backdrop-filter: blur(6px);
+      }
+
+      button {
+        font: inherit;
+        color: inherit;
+        background: #1d2742;
+        border: 1px solid #33406b;
+        border-radius: 6px;
+        padding: 7px 12px;
+        cursor: pointer;
+      }
+
+      button:hover {
+        background: #273357;
+      }
+
+      #status {
+        margin-left: auto;
+        opacity: 0.8;
+        font-variant-numeric: tabular-nums;
       }
     </style>
   </head>
   <body>
+    <!-- This page consumes getUserMedia() exactly as it would with a real
+         camera; media-mock decides what the frames actually are. -->
     <video id="video" autoplay playsinline muted></video>
+
+    <div id="controls">
+      <button id="source-video" type="button">Video file</button>
+      <button id="source-three" type="button">Three.js scene</button>
+      <button id="simulate-denied" type="button">Simulate denied</button>
+      <span id="status">starting…</span>
+    </div>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

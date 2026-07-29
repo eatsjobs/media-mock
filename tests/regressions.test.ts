@@ -43,7 +43,7 @@ describe("MediaMock regressions", () => {
 
   it("should make the source image visible in debug mode and hide it again when disabled", async () => {
     MediaMock.mock(devices["Samsung Galaxy M53"]);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
     await navigator.mediaDevices.getUserMedia({ video: true });
 
     MediaMock.enableDebugMode();
@@ -66,12 +66,12 @@ describe("MediaMock regressions", () => {
     // where treating a video as an image used to fail.
     MediaMock.mock(devices["Samsung Galaxy M53"]);
 
-    await MediaMock.setMediaURL("/assets/hd_1280_720_25fps.webm?token=abc");
+    await MediaMock.setSource("/assets/hd_1280_720_25fps.webm?token=abc");
     const stream = await navigator.mediaDevices.getUserMedia({ video: true });
 
     expect(stream.getVideoTracks()[0].readyState).toBe("live");
     // Had the URL been classified as an image, decoding a .webm as an image
-    // would have rejected setMediaURL — and an <img> would have been attached
+    // would have rejected setSource — and an <img> would have been attached
     // to the document. Video sources stay detached.
     expect(document.querySelector("img")).toBeNull();
   });
@@ -82,7 +82,7 @@ describe("MediaMock regressions", () => {
     for (const mode of [TimerMode.SetInterval, TimerMode.Raf, TimerMode.Auto]) {
       MediaMock.unmock();
       MediaMock.setTimerMode(mode).mock(devices["Samsung Galaxy M53"]);
-      await MediaMock.setMediaURL(imageUrl);
+      await MediaMock.setSource(imageUrl);
 
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       expect(stream.getVideoTracks()[0].readyState, mode).toBe("live");
@@ -93,17 +93,17 @@ describe("MediaMock regressions", () => {
 
   it("should reject when a video source fails to load", async () => {
     MediaMock.mock(devices["Samsung Galaxy M53"]);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     await expect(
-      MediaMock.setMediaURL("/assets/does-not-exist.webm"),
+      MediaMock.setSource("/assets/does-not-exist.webm"),
     ).rejects.toThrow(/Video failed to load/);
 
     // The previous source must survive a failed swap, so an active stream keeps
     // producing frames.
     const stream = await navigator.mediaDevices.getUserMedia({ video: true });
     expect(stream.getVideoTracks()[0].readyState).toBe("live");
-    expect(MediaMock["settings"].mediaURL).toBe(imageUrl);
+    expect(MediaMock.settings.mediaURL).toBe(imageUrl);
   });
 
   it("should not mutate the exported device presets when adding or removing mock devices", () => {
@@ -128,7 +128,7 @@ describe("MediaMock regressions", () => {
 
   it("should honor frameRate exact constraint", async () => {
     MediaMock.mock(devices["Samsung Galaxy M53"]);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
 
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { frameRate: { exact: 25 } },
@@ -146,7 +146,7 @@ describe("MediaMock regressions", () => {
     MediaMock.unmock();
 
     MediaMock.mock(devices["Samsung Galaxy M53"]);
-    await MediaMock.setMediaURL(imageUrl);
+    await MediaMock.setSource(imageUrl);
     await navigator.mediaDevices.getUserMedia({ video: true });
 
     expect(handlerCalls).toBe(0);
