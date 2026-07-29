@@ -52,7 +52,16 @@
   await MediaMock.setSource(pattern);
   ```
 
-  `setMediaURL()` keeps working unchanged; it now delegates to `setSource()`.
+  `setSource()` is the only entry point for choosing a source: `setMediaURL()` is
+  removed in this release, as described under Major Changes above.
+
+  > **Correction.** As first published, this 2.0.0 entry stated that
+  > `setMediaURL()` kept working and delegated to `setSource()`. That was
+  > wrong: the method is absent from `dist/main.js`, `dist/main.cjs` and
+  > `dist/main.d.ts`, so calling it fails with
+  > `TypeError: MediaMock.setMediaURL is not a function`. The sentence came
+  > from a changeset written for an earlier, non-breaking release and was
+  > carried into 2.0.0 unchanged.
 
 ### Patch Changes
 

@@ -25,7 +25,13 @@ Everything else is unchanged: `mock`, `unmock`, `enableDebugMode`, `disableDebug
 +await MediaMock.setSource("./assets/frame.png");
 ```
 
-A rename for the common case. `setSource()` takes the same URLs — images and videos, chosen by extension — and additionally accepts things `setMediaURL` could not express:
+`setMediaURL` is **removed, not deprecated**. It is absent from the compiled JavaScript and from the type declarations, so a missed call site fails loudly:
+
+```
+TypeError: MediaMock.setMediaURL is not a function
+```
+
+`setSource()` takes the same URLs — images and videos, chosen by extension — and additionally accepts things `setMediaURL` could not express:
 
 ```typescript
 await MediaMock.setSource(renderer.domElement);  // a canvas you render into
