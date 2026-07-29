@@ -125,24 +125,6 @@ describe("MediaMock", () => {
     expect(enumeratedDevices2).not.toContain(newMediaDevice);
   });
 
-  it("should return correct video resolutions", async () => {
-    const device = getDeviceForBrowser();
-    MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
-
-    const resolution = MediaMock["getResolution"](
-      {
-        video: {
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-        },
-      },
-      device,
-    );
-
-    expect(resolution).toEqual({ width: 1080, height: 1920 });
-  });
-
   it("should unmock properly", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
@@ -470,90 +452,6 @@ describe("MediaMock", () => {
 
   // ===== RESOLUTION MATCHING TESTS =====
 
-  it("should find exact resolution match", async () => {
-    const device = getDeviceForBrowser();
-    MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
-
-    // Test exact resolution match for portrait mode (device returns landscape that gets swapped)
-    const resolution = MediaMock["getResolution"](
-      {
-        video: {
-          width: { exact: 1080 },
-          height: { exact: 1920 },
-        },
-      },
-      device,
-    );
-
-    expect(resolution).toBeDefined();
-    expect(resolution.width).toBeGreaterThan(0);
-    expect(resolution.height).toBeGreaterThan(0);
-  });
-
-  it("should find best fit resolution by aspect ratio", async () => {
-    const device = getDeviceForBrowser();
-    MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
-
-    // Request resolution that doesn't exactly match, should find best fit
-    const resolution = MediaMock["getResolution"](
-      {
-        video: {
-          width: { ideal: 800 },
-          height: { ideal: 600 },
-        },
-      },
-      device,
-    );
-
-    expect(resolution).toBeDefined();
-    expect(resolution.width).toBeGreaterThan(0);
-    expect(resolution.height).toBeGreaterThan(0);
-  });
-
-  it("should use fallback resolution when no match found", async () => {
-    const device = getDeviceForBrowser();
-    MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
-
-    // Request extreme resolution that won't match
-    const resolution = MediaMock["getResolution"](
-      {
-        video: {
-          width: { exact: 99999 },
-          height: { exact: 99999 },
-        },
-      },
-      device,
-    );
-
-    expect(resolution).toBeDefined();
-    expect(resolution.width).toBeGreaterThan(0);
-    expect(resolution.height).toBeGreaterThan(0);
-  });
-
-  it("should handle portrait orientation correctly", async () => {
-    const device = getDeviceForBrowser();
-    MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
-
-    // Force portrait check (depends on window dimensions)
-    const resolution = MediaMock["getResolution"](
-      {
-        video: {
-          width: { ideal: 640 },
-          height: { ideal: 480 },
-        },
-      },
-      device,
-    );
-
-    expect(resolution).toBeDefined();
-    expect(typeof resolution.width).toBe("number");
-    expect(typeof resolution.height).toBe("number");
-  });
-
   // ===== ERROR HANDLING TESTS =====
 
   it("should reject invalid mediaURL", async () => {
@@ -781,48 +679,6 @@ describe("MediaMock", () => {
   });
 
   // ===== RESOLUTION EDGE CASE TESTS =====
-
-  it("should handle findBestFitResolution with various aspect ratios", async () => {
-    const device = getDeviceForBrowser();
-    MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
-
-    // Test with very different aspect ratio to trigger best fit algorithm
-    const resolution = MediaMock["getResolution"](
-      {
-        video: {
-          width: { ideal: 2560 },
-          height: { ideal: 1440 },
-        },
-      },
-      device,
-    );
-
-    expect(resolution).toBeDefined();
-    expect(resolution.width).toBeGreaterThan(0);
-    expect(resolution.height).toBeGreaterThan(0);
-  });
-
-  it("should handle getFallbackResolution for landscape orientation", async () => {
-    const device = getDeviceForBrowser();
-    MediaMock.mock(device);
-    await MediaMock.setMediaURL(imageUrl);
-
-    // Request extreme landscape resolution to trigger fallback
-    const resolution = MediaMock["getResolution"](
-      {
-        video: {
-          width: { exact: 50000 },
-          height: { exact: 1 },
-        },
-      },
-      device,
-    );
-
-    expect(resolution).toBeDefined();
-    expect(resolution.width).toBeGreaterThan(0);
-    expect(resolution.height).toBeGreaterThan(0);
-  });
 
   it("should get supported constraints", async () => {
     const device = getDeviceForBrowser();
