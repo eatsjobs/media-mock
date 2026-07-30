@@ -1,5 +1,21 @@
 # @eatsjobs/media-mock
 
+## 2.0.2
+
+### Patch Changes
+
+- b5edb20: Fix `getUserMedia()` substituting the default placeholder when a `setSource()` call is still in flight.
+
+  `setSource()` assigns the source only once its media has loaded. A caller who did not await it — `MediaMock.setSource(url)` immediately followed by `getUserMedia()` — therefore hit a `getMockStream` that saw no source at all, loaded the built-in 1×1 placeholder, and started capture on a blank white frame. It then _disposed_ the real source when it arrived moments later, and only a subsequent redraw switched the stream over. Tests that read the first frames — a barcode scanner, for instance — failed intermittently for reasons that pointed nowhere near the missing `await`.
+
+  `getUserMedia()` now waits for an in-flight `setSource()` before deciding what to capture, so the source you asked for is the one that streams. A `setSource()` that rejects still surfaces on its own promise and no longer takes the stream down with it; the default placeholder covers that case as before.
+
+- ac40623: Warn when a source swap cannot reach an already-running stream.
+
+  A track from `captureStream()` is bound for life to the canvas it was captured from, so a live stream follows a `setSource()` call only while that canvas stays the same. This holds between painted sources — images and videos share the canvas MediaMock owns — but not across the boundary to or from a canvas you render yourself, nor between two different canvases of your own. Previously the stream simply froze on its last frame with no indication why.
+
+  Such a swap now logs a warning naming the remedy: request a new stream with `getUserMedia()`. The README documents which swaps a live stream can and cannot follow.
+
 ## 2.0.1
 
 ### Patch Changes
