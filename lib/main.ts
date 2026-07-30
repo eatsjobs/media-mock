@@ -207,6 +207,13 @@ export class MediaMockClass {
   /** What paints the frames — an image, a video, or anything implementing FrameSource. */
   private source: FrameSource | undefined;
 
+  /**
+   * A `setSource()` call that has not settled yet. `getUserMedia` waits on it,
+   * so a caller who forgets to await `setSource()` still gets the source they
+   * asked for rather than the default placeholder.
+   */
+  private pendingSource: Promise<void> | undefined;
+
   /** The canvas captureStream() runs on, created here or borrowed from a source. */
   private surface: CaptureSurface | undefined;
 
@@ -257,9 +264,26 @@ export class MediaMockClass {
    * you render into, or your own {@link FrameSource}
    * @returns {Promise<MediaMockClass>}
    */
-  public async setSource(
+  public setSource(
     source: string | HTMLCanvasElement | FrameSource,
   ): Promise<MediaMockClass> {
+    // Registered synchronously, before the first await, so a getUserMedia call
+    // made in the same tick can see that a source is on its way.
+    const applied = this.applySource(source);
+    this.pendingSource = applied;
+
+    return applied
+      .then(() => this)
+      .finally(() => {
+        if (this.pendingSource === applied) {
+          this.pendingSource = undefined;
+        }
+      });
+  }
+
+  private async applySource(
+    source: string | HTMLCanvasElement | FrameSource,
+  ): Promise<void> {
     const frameSource = this.toFrameSource(source);
 
     // Prepare the NEW source before touching any existing state, so a failed
@@ -283,7 +307,6 @@ export class MediaMockClass {
     if (!frameSource.captureCanvas && this.loop.running) {
       this.startDrawingLoop();
     }
-    return this;
   }
 
   /**
@@ -618,6 +641,16 @@ export class MediaMockClass {
     }
 
     this.fps = extractFrameRate(constraints);
+
+    // A setSource() still in flight decides what to stream. Without this wait,
+    // a caller who did not await it would race: the source is only assigned once
+    // its media has loaded, so this method would see none and substitute the
+    // default placeholder — then discard the real source when it arrived.
+    // A rejection belongs to whoever called setSource(), so it is not rethrown
+    // here; the default below covers that case.
+    if (this.pendingSource) {
+      await this.pendingSource.catch(() => undefined);
+    }
 
     // Load the default media source on first use, so getUserMedia works with no
     // explicit setSource() call.
