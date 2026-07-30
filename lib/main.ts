@@ -301,12 +301,48 @@ export class MediaMockClass {
       showForDebug(frameSource.element);
     }
 
+    this.warnIfLiveStreamCannotFollow(frameSource);
+
     // Restart drawing with the new source if a stream is active. The loop
     // redraws immediately, so the canvas (and the captured track) picks up the
     // new content without a gap. A captured canvas has no loop to restart.
     if (!frameSource.captureCanvas && this.loop.running) {
       this.startDrawingLoop();
     }
+  }
+
+  /**
+   * Warns when a source swap cannot reach an already-running stream.
+   *
+   * A track from `captureStream()` is bound for life to the canvas it was
+   * captured from, and nothing can re-point it. A live stream therefore follows
+   * a swap only while the canvas stays the same: that holds between painted
+   * sources, since images and videos share the canvas MediaMock owns, but not
+   * across the boundary to or from a canvas the consumer renders, nor between
+   * two different consumer canvases.
+   *
+   * Without this the stream just freezes on its last frame, which gives the
+   * caller nothing to go on.
+   */
+  private warnIfLiveStreamCannotFollow(next: FrameSource): void {
+    const surface = this.surface;
+    if (!this.currentStream || !surface) {
+      return;
+    }
+
+    const cannotFollow = next.captureCanvas
+      ? next.captureCanvas !== surface.canvas
+      : !surface.owned;
+
+    if (!cannotFollow) {
+      return;
+    }
+
+    console.warn(
+      "media-mock: the new source renders into a different canvas than the one " +
+        "the active stream was captured from, so that stream's frames will stop " +
+        "updating. Call getUserMedia() again to capture the new source.",
+    );
   }
 
   /**
