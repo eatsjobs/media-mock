@@ -219,6 +219,26 @@ Four guarantees for a canvas you supply:
 - **`frameRate` constraints still apply**, because capture rate is independent of your render loop.
 - **Nothing else is touched** — not restyled (including by `enableDebugMode()`), not moved in the DOM, not removed by `unmock()`.
 
+### Swapping sources while a stream is live
+
+`setSource()` can be called at any time, but a stream already handed out by `getUserMedia()` only follows the change while the underlying canvas stays the same:
+
+| Swap on a live stream | Follows? |
+| --- | --- |
+| image → image, image → video, video → image | **yes** — both are drawn onto the canvas MediaMock owns |
+| image/video → your canvas | no |
+| your canvas → image/video | no |
+| your canvas → a *different* canvas | no |
+
+A track from `captureStream()` is bound for life to the canvas it was captured from, and no API can re-point it — so crossing that boundary needs a fresh stream:
+
+```typescript
+await MediaMock.setSource(renderer.domElement);
+const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+```
+
+MediaMock logs a warning when a swap cannot reach the live stream, rather than letting its frames quietly freeze.
+
 ### Any source: `setSource`
 
 `setSource` is the single entry point for every kind of source:
