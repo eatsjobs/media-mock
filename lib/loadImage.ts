@@ -40,7 +40,11 @@ export async function loadImage(
     //    placeholder source — so failing the load would make the mock unusable
     //    there for no reason. The warmup draw below is the guarantee that
     //    matters, and it throws if the pixels really are unusable.
-    await Promise.race([image.decode().catch(() => undefined), timeout]);
+    //    A DOM emulator may not implement decode() at all, in which case there
+    //    is nothing to await and the warmup draw below stands alone.
+    if (typeof image.decode === "function") {
+      await Promise.race([image.decode().catch(() => undefined), timeout]);
+    }
 
     // 3. Force pixel data into CPU-accessible memory. On some webkit versions,
     //    decode() resolves before the pixel data is ready for canvas drawImage —

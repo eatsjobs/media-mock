@@ -67,6 +67,20 @@ export default defineConfig({
           ...timeouts,
         },
       },
+      // DOM emulators with no real media stack. These cover the device-emulation
+      // half of the library — enumeration, capabilities, constraint refusal,
+      // error simulation — which needs no canvas and no codecs. Both are run:
+      // they fail in different places (happy-dom's MediaStream drops tracks,
+      // jsdom's <img> never settles), so one passing does not imply the other.
+      ...(["happy-dom", "jsdom"] as const).map((environment) => ({
+        test: {
+          name: `emulator-${environment}`,
+          globals: true,
+          environment,
+          include: ["tests/emulator/**/*.test.ts"],
+          ...timeouts,
+        },
+      })),
       {
         // Everything that touches navigator.mediaDevices, canvas or the DOM.
         test: {

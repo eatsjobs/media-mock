@@ -39,23 +39,65 @@ import { type Resolution, resolveResolution } from "./resolution";
 import { CanvasSource } from "./sources/CanvasSource";
 import { createSourceFromURL } from "./sources/createSource";
 import type { FrameSource } from "./sources/FrameSource";
+import {
+  createSyntheticStream,
+  createSyntheticVideoTrack,
+} from "./syntheticStream";
 import { decorateAudioTrack, decorateVideoTrack } from "./track";
 
 export interface MockOptions {
+  /** Which `navigator.mediaDevices` methods to replace. All of them by default. */
+  mediaDevices?: {
+    getUserMedia?: boolean;
+    getSupportedConstraints?: boolean;
+    enumerateDevices?: boolean;
+  };
+
+  /**
+   * Whether `getUserMedia` should produce real video frames.
+   *
+   * Painting frames needs a canvas with a 2D context and `captureStream()`,
+   * which a DOM emulator (happy-dom, jsdom) does not have. Set `false` there:
+   * the returned track carries the emulated camera's identity, settings and
+   * capabilities, but no pixels.
+   *
+   * @default true
+   */
+  frames?: boolean;
+
+  /**
+   * Whether `getUserMedia` should produce an audio track.
+   *
+   * Needs Web Audio, which a DOM emulator does not have. With `false`, a
+   * request for audio is refused with `NotFoundError` rather than silently
+   * returning a stream without it.
+   *
+   * @default true
+   */
+  audio?: boolean;
+}
+
+/** A fully populated {@link MockOptions}, with every default filled in. */
+interface ResolvedMockOptions {
   mediaDevices: {
     getUserMedia: boolean;
     getSupportedConstraints: boolean;
     enumerateDevices: boolean;
   };
+  frames: boolean;
+  audio: boolean;
 }
 
-function createDefaultMockOptions(): MockOptions {
+function resolveMockOptions(options?: MockOptions): ResolvedMockOptions {
   return {
     mediaDevices: {
-      getUserMedia: true,
-      getSupportedConstraints: true,
-      enumerateDevices: true,
+      getUserMedia: options?.mediaDevices?.getUserMedia ?? true,
+      getSupportedConstraints:
+        options?.mediaDevices?.getSupportedConstraints ?? true,
+      enumerateDevices: options?.mediaDevices?.enumerateDevices ?? true,
     },
+    frames: options?.frames ?? true,
+    audio: options?.audio ?? true,
   };
 }
 
@@ -122,7 +164,54 @@ export interface Settings {
  * needs this to decide whether to report a landscape mode swapped.
  */
 function isPortraitViewport(): boolean {
+  // No window to measure (node): nothing to swap, so treat it as landscape.
+  if (typeof window === "undefined") {
+    return false;
+  }
   return window.innerHeight > window.innerWidth;
+}
+
+/**
+ * Whether this environment can actually paint and capture a canvas.
+ *
+ * Checked before any media is loaded: a DOM emulator will happily hand out a
+ * canvas element and then return null for its context, and jsdom's `<img>`
+ * never settles, so without this a frames request hangs for the whole media
+ * timeout before failing somewhere less obvious.
+ */
+function canPaintFrames(): boolean {
+  if (typeof document === "undefined") {
+    return false;
+  }
+
+  const probe = document.createElement("canvas");
+  return (
+    typeof probe.getContext === "function" &&
+    probe.getContext("2d") != null &&
+    typeof probe.captureStream === "function"
+  );
+}
+
+/** The advice attached to every "this environment cannot paint" failure. */
+const FRAMELESS_HINT =
+  "This environment cannot paint frames — call mock(device, { frames: false }) " +
+  "to stream a track that carries the camera's identity without pixels.";
+
+/**
+ * Every track on a stream. `getTracks()` is absent on happy-dom's MediaStream
+ * (issue #11), so fall back to the per-kind accessors.
+ */
+function tracksOf(stream: MediaStream | undefined): MediaStreamTrack[] {
+  if (!stream) {
+    return [];
+  }
+  if (typeof stream.getTracks === "function") {
+    return stream.getTracks();
+  }
+  return [
+    ...(stream.getVideoTracks?.() ?? []),
+    ...(stream.getAudioTracks?.() ?? []),
+  ];
 }
 
 function isCanvasElement(value: unknown): value is HTMLCanvasElement {
@@ -231,6 +320,10 @@ export class MediaMockClass {
   private readonly patcher = new MediaDevicesPatcher();
 
   private readonly microphone = new Microphone();
+
+  /** Whether this mock may paint frames and open a microphone. */
+  private produceFrames = true;
+  private produceAudio = true;
 
   private currentStream: (MediaStream & { stop?: VoidFunction }) | undefined;
 
@@ -519,13 +612,15 @@ export class MediaMockClass {
    *
    * @public
    * @param {DeviceConfig} device
-   * @param {MockOptions} [options=createDefaultMockOptions()]
+   * @param {MockOptions} [options] - which `navigator.mediaDevices` methods to
+   * replace, and whether to produce frames and audio. Every member is optional.
    * @returns {typeof MediaMock}
    */
-  public mock(
-    device: DeviceConfig,
-    options: MockOptions = createDefaultMockOptions(),
-  ): typeof MediaMock {
+  public mock(device: DeviceConfig, options?: MockOptions): typeof MediaMock {
+    const resolved = resolveMockOptions(options);
+    this.produceFrames = resolved.frames;
+    this.produceAudio = resolved.audio;
+
     // Clone the config so addMockDevice/removeMockDevice never mutate the
     // caller's object (the exported presets are shared across tests).
     this.state.device = cloneDeviceConfig(device);
@@ -538,7 +633,7 @@ export class MediaMockClass {
       return this;
     }
 
-    if (options?.mediaDevices.getUserMedia) {
+    if (resolved.mediaDevices.getUserMedia) {
       this.patcher.patch(
         "getUserMedia",
         (constraints: MediaStreamConstraints) =>
@@ -546,7 +641,7 @@ export class MediaMockClass {
       );
     }
 
-    if (options?.mediaDevices.getSupportedConstraints) {
+    if (resolved.mediaDevices.getSupportedConstraints) {
       // A copy per call, as real browsers build: returning the live object
       // would let a caller who edits the result corrupt the mock's own state.
       this.patcher.patch("getSupportedConstraints", () => ({
@@ -554,7 +649,7 @@ export class MediaMockClass {
       }));
     }
 
-    if (options?.mediaDevices.enumerateDevices) {
+    if (resolved.mediaDevices.enumerateDevices) {
       this.patcher.patch("enumerateDevices", async () =>
         this.enumerateMockDevices(),
       );
@@ -584,10 +679,11 @@ export class MediaMockClass {
     this.loop.stop();
 
     // Every track, not only video: an audio-only stream has no video tracks and
-    // would otherwise stay live after unmock().
-    this.currentStream?.getTracks()?.forEach((track) => {
+    // would otherwise stay live after unmock(). getTracks() is missing on some
+    // emulated MediaStream implementations, so the per-kind lists stand in.
+    for (const track of tracksOf(this.currentStream)) {
       track.stop();
-    });
+    }
     this.currentStream?.stop?.(); // Stop the stream if needed
     this.currentStream = undefined;
 
@@ -721,7 +817,10 @@ export class MediaMockClass {
     // A runtime with no Web Audio cannot produce an audio track at all, which
     // is indistinguishable from having no microphone: refuse up front rather
     // than build the video half and hand back a partial stream.
-    if (wantsAudio && (!audioDevice || !Microphone.isSupported())) {
+    if (
+      wantsAudio &&
+      (!audioDevice || !this.produceAudio || !Microphone.isSupported())
+    ) {
       throw createGetUserMediaError("NotFoundError");
     }
     if (wantsVideo && !videoDevice) {
@@ -742,10 +841,20 @@ export class MediaMockClass {
       });
     }
 
+    // Before any media is loaded, so an environment that can never paint fails
+    // immediately rather than after the media timeout.
+    if (wantsVideo && this.produceFrames && !canPaintFrames()) {
+      throw new Error(`Cannot capture video frames. ${FRAMELESS_HINT}`);
+    }
+
     const tracks: MediaStreamTrack[] = [];
 
     if (wantsVideo) {
-      tracks.push(...(await this.captureVideoTracks(constraints, videoDevice)));
+      tracks.push(
+        ...(this.produceFrames
+          ? await this.captureVideoTracks(constraints, videoDevice)
+          : this.framelessVideoTracks(constraints, videoDevice)),
+      );
     }
 
     if (wantsAudio) {
@@ -759,9 +868,39 @@ export class MediaMockClass {
       tracks.push(audioTrack);
     }
 
-    this.currentStream = new MediaStream(tracks);
+    // A synthetic track is not a real MediaStreamTrack, so a real MediaStream
+    // will not accept it — and an emulator's MediaStream drops tracks anyway.
+    this.currentStream = this.produceFrames
+      ? new MediaStream(tracks)
+      : createSyntheticStream(tracks);
 
     return this.currentStream;
+  }
+
+  /**
+   * Video tracks carrying the emulated camera's identity but no pixels, for
+   * environments that cannot capture a canvas.
+   */
+  private framelessVideoTracks(
+    constraints: MediaStreamConstraints,
+    videoDevice: MockMediaDeviceInfo | undefined,
+  ): MediaStreamTrack[] {
+    const fps = extractFrameRate(constraints);
+    const resolution = resolveResolution(
+      constraints,
+      this.state.device.videoResolutions,
+      isPortraitViewport(),
+    );
+
+    const track = createSyntheticVideoTrack();
+    decorateVideoTrack(track, {
+      device: videoDevice,
+      fps,
+      resolution,
+      deviceResolutions: this.state.device.videoResolutions,
+    });
+
+    return this.mockedVideoTracksHandler([track]);
   }
 
   /**

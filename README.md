@@ -39,6 +39,7 @@ Can also be used as browser extension please have a look at this repo [https://g
   - [MockOptions](#mockoptions)
   - [DeviceConfig](#deviceconfig)
 - [Testing with Playwright](#testing-with-playwright)
+- [Unit testing without a browser](#unit-testing-without-a-browser)
 - [Debugging](#debugging)
 
 ---
@@ -661,21 +662,25 @@ interface EnhancedMediaTrackCapabilities extends MediaTrackCapabilities {
 
 ### `MockOptions`
 
-Defines which `navigator.mediaDevices` methods should be mocked:
+Which `navigator.mediaDevices` methods to replace, and what `getUserMedia` should produce. Every member is optional; omit the object entirely to get all of the defaults.
 
 ```typescript
 interface MockOptions {
-  mediaDevices: {
-    getUserMedia: boolean;
-    getSupportedConstraints: boolean;
-    enumerateDevices: boolean;
+  mediaDevices?: {
+    getUserMedia?: boolean;
+    getSupportedConstraints?: boolean;
+    enumerateDevices?: boolean;
   };
+  frames?: boolean;
+  audio?: boolean;
 }
 ```
 
-- **mediaDevices.getUserMedia**: `boolean` - Enables `navigator.mediaDevices.getUserMedia`.
-- **mediaDevices.getSupportedConstraints**: `boolean` - Enables `navigator.mediaDevices.getSupportedConstraints`.
-- **mediaDevices.enumerateDevices**: `boolean` - Enables `navigator.mediaDevices.enumerateDevices`.
+- **mediaDevices.getUserMedia**: `boolean` (default `true`) - Enables `navigator.mediaDevices.getUserMedia`.
+- **mediaDevices.getSupportedConstraints**: `boolean` (default `true`) - Enables `navigator.mediaDevices.getSupportedConstraints`.
+- **mediaDevices.enumerateDevices**: `boolean` (default `true`) - Enables `navigator.mediaDevices.enumerateDevices`.
+- **frames**: `boolean` (default `true`) - Whether to paint real video frames. Needs a canvas with a 2D context and `captureStream()`, so set `false` in a DOM emulator. See [Unit testing without a browser](#unit-testing-without-a-browser).
+- **audio**: `boolean` (default `true`) - Whether to produce an audio track. Needs Web Audio; with `false`, a request for audio is refused with `NotFoundError`.
 
 ### `Settings`
 
@@ -729,6 +734,41 @@ interface MockMediaDeviceInfo extends MediaDeviceInfo {
 ```
 
 ---
+
+## Unit testing without a browser
+
+A DOM emulator has no rasteriser and no codecs, so it can never produce real frames. It can still answer every question about *which devices exist and what they can do* — and that is what most unit tests actually ask. Pass `frames: false` and `audio: false` to get that half:
+
+```typescript
+import { MediaMock, devices } from "@eatsjobs/media-mock";
+
+MediaMock.mock(devices["iPhone 12"], { frames: false, audio: false });
+
+await navigator.mediaDevices.enumerateDevices();      // the emulated device list
+navigator.mediaDevices.getSupportedConstraints();     // the device's constraints
+
+const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+const [track] = stream.getVideoTracks();
+track.label;                    // "Back Camera"
+track.getSettings().deviceId;   // the selected camera's id
+track.getCapabilities().torch;  // true
+```
+
+`navigator.mediaDevices` does not exist in these environments, so `mock()` installs one and `unmock()` removes it again — including the `navigator` object itself on Node below v21, which has none. The stream and its tracks satisfy `instanceof MediaStream` / `instanceof MediaStreamTrack` wherever the environment defines those interfaces. The track is live and fully described but carries no pixels; put a `<video>` in front of it and nothing will paint.
+
+**What works:** `enumerateDevices`, `getSupportedConstraints`, `getCapabilities`, device selection by `deviceId`/`facingMode`, constraint refusal (`OverconstrainedError`, `NotFoundError`, `TypeError`), error simulation, redaction while permission is denied, and `devicechange` events.
+
+**What does not:** frames of any kind, audio tracks, and anything that loads media from a URL — an emulator has no server to fetch `./assets/frame.png` from. Use `setSource()` only in a real browser.
+
+| | node | happy-dom | jsdom |
+| --- | --- | --- | --- |
+| Device emulation (`frames: false`) | yes | yes | yes |
+| Real frames | no | no | no |
+| Audio tracks | no | no | no |
+
+happy-dom and jsdom are equally usable for the device half — the library's own emulator suite runs green on both. Neither can paint, and they fail differently if you try (happy-dom returns a null canvas context; jsdom's `<img>` never settles at all), so leaving `frames` at its default in either raises an error naming the option before any media is loaded, rather than hanging until the media timeout.
+
+Adding `canvas` or a canvas mock to jsdom does not change this: node-canvas has no `captureStream`, and jsdom's `<img>` still will not load a data URI. Frames need a real browser.
 
 ## Testing with Playwright
 

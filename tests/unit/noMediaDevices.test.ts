@@ -1,12 +1,16 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMediaDeviceInfo } from "../../lib/createMediaDeviceInfo";
 import { createMediaMock, devices } from "../../lib/main";
 
 /**
- * Node has no `MediaDevices`. `mock()` already tolerates that and warns, so
- * everything reachable afterwards has to tolerate it too.
+ * Plain node: no `MediaDevices`, no `document`, no `window`. The mock supplies
+ * its own `navigator.mediaDevices`, so everything that does not need pixels
+ * works here — which is most of what a unit test asks a camera about.
  */
-describe("an environment without MediaDevices", () => {
+describe("node, with no DOM at all", () => {
+  const mock = createMediaMock();
+  const frameless = { frames: false, audio: false } as const;
+
   const extraCamera = createMediaDeviceInfo({
     deviceId: "extra-1",
     groupId: "extra",
@@ -14,30 +18,123 @@ describe("an environment without MediaDevices", () => {
     label: "Extra Camera",
   });
 
-  it("should warn rather than throw from mock()", () => {
+  afterEach(() => {
+    mock.unmock();
+  });
+
+  it("should install a working navigator.mediaDevices", () => {
+    expect(navigator.mediaDevices).toBeUndefined();
+
+    mock.mock(devices["iPhone 12"], frameless);
+
+    expect(typeof navigator.mediaDevices.getUserMedia).toBe("function");
+  });
+
+  it("should work where the runtime has no global navigator", () => {
+    // Node only grew a global `navigator` in v21; the package declares
+    // engines.node >= 16, and CI runs 22 and 24, so this range is untested.
+    const nativeNavigator = globalThis.navigator;
+    // @ts-expect-error - simulating Node 16-20
+    delete globalThis.navigator;
+
+    try {
+      mock.mock(devices["iPhone 12"], frameless);
+
+      expect(typeof navigator.mediaDevices.getUserMedia).toBe("function");
+    } finally {
+      mock.unmock();
+      globalThis.navigator = nativeNavigator;
+    }
+  });
+
+  it("should leave no navigator behind where it invented one", () => {
+    const nativeNavigator = globalThis.navigator;
+    // @ts-expect-error - simulating Node 16-20
+    delete globalThis.navigator;
+
+    try {
+      mock.mock(devices["iPhone 12"], frameless);
+      mock.unmock();
+
+      expect(globalThis.navigator).toBeUndefined();
+    } finally {
+      globalThis.navigator = nativeNavigator;
+    }
+  });
+
+  it("should keep the invented globals while another instance still mocks", () => {
+    // createMediaMock() exists for isolation, so two instances in one process is
+    // a supported shape. The first to invent the globals must not pull them out
+    // from under the second.
+    const nativeNavigator = globalThis.navigator;
+    // @ts-expect-error - simulating Node 16-20
+    delete globalThis.navigator;
+    const first = createMediaMock();
+    const second = createMediaMock();
+
+    try {
+      first.mock(devices["iPhone 12"], frameless);
+      second.mock(devices["iPhone 12"], frameless);
+
+      first.unmock();
+
+      // Unpatching the shared prototype is the documented single-mocker
+      // limitation; destroying the environment out from under the second
+      // instance is not. The invented globals have to outlive the first release.
+      expect(globalThis.navigator).toBeDefined();
+      expect(typeof MediaDevices).toBe("function");
+
+      second.unmock();
+      expect(globalThis.navigator).toBeUndefined();
+      expect(typeof MediaDevices).toBe("undefined");
+    } finally {
+      first.unmock();
+      second.unmock();
+      globalThis.navigator = nativeNavigator;
+    }
+  });
+
+  it("should warn and do nothing where it cannot even build an EventTarget", () => {
+    // The one environment left that cannot be mocked at all.
+    const nativeEventTarget = globalThis.EventTarget;
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const mock = createMediaMock();
+    // @ts-expect-error - simulating a runtime with no EventTarget
+    delete globalThis.EventTarget;
 
-    expect(() => mock.mock(devices["iPhone 12"])).not.toThrow();
-    expect(warn).toHaveBeenCalled();
+    try {
+      expect(() => mock.mock(devices["iPhone 12"], frameless)).not.toThrow();
+      expect(warn).toHaveBeenCalled();
+      expect(globalThis.navigator?.mediaDevices).toBeUndefined();
+    } finally {
+      globalThis.EventTarget = nativeEventTarget;
+      warn.mockRestore();
+    }
+  });
 
-    warn.mockRestore();
+  it("should remove it again on unmock", () => {
+    mock.mock(devices["iPhone 12"], frameless);
+
+    mock.unmock();
+
+    expect(navigator.mediaDevices).toBeUndefined();
+  });
+
+  it("should enumerate the emulated devices", async () => {
+    mock.mock(devices["iPhone 12"], frameless);
+
+    const enumerated = await navigator.mediaDevices.enumerateDevices();
+
+    expect(enumerated[0].label).toBe("Front Camera");
   });
 
   it("should not throw from addMockDevice", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const mock = createMediaMock();
-    mock.mock(devices["iPhone 12"]);
+    mock.mock(devices["iPhone 12"], frameless);
 
     expect(() => mock.addMockDevice(extraCamera)).not.toThrow();
-
-    warn.mockRestore();
   });
 
-  it("should still record the device it was given", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const mock = createMediaMock();
-    mock.mock(devices["iPhone 12"]);
+  it("should record the device it was given", () => {
+    mock.mock(devices["iPhone 12"], frameless);
 
     mock.addMockDevice(extraCamera);
 
@@ -46,17 +143,30 @@ describe("an environment without MediaDevices", () => {
         (device) => device.deviceId === "extra-1",
       ),
     ).toBe(true);
-
-    warn.mockRestore();
   });
 
   it("should not throw from removeMockDevice", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const mock = createMediaMock();
-    mock.mock(devices["iPhone 12"]);
+    mock.mock(devices["iPhone 12"], frameless);
 
     expect(() => mock.removeMockDevice("extra-1")).not.toThrow();
+  });
 
-    warn.mockRestore();
+  it("should serve a frameless stream without a window to measure", async () => {
+    // Orientation is read from `window`, which node does not have.
+    mock.mock(devices["iPhone 12"], frameless);
+
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+
+    expect(stream.getVideoTracks()[0].label).toBe("Front Camera");
+  });
+
+  it("should refuse a request the device cannot serve", async () => {
+    mock.mock(devices["iPhone 12"], frameless);
+
+    await expect(
+      navigator.mediaDevices.getUserMedia({
+        video: { width: { exact: 99999 } },
+      }),
+    ).rejects.toMatchObject({ constraint: "width" });
   });
 });
