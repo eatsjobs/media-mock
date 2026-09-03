@@ -35,6 +35,7 @@ import {
 import { DrawingLoop, TimerMode } from "./drawingLoop";
 import { Microphone } from "./microphone";
 import { MediaDevicesPatcher } from "./patchMediaDevices";
+import { ReadyStateReporter } from "./readyState";
 import { type Resolution, resolveResolution } from "./resolution";
 import { CanvasSource } from "./sources/CanvasSource";
 import { createSourceFromURL } from "./sources/createSource";
@@ -67,19 +68,21 @@ export interface MockOptions {
   frames?: boolean;
 
   /**
-   * Whether the mock should deliver `requestVideoFrameCallback` itself for a
-   * `<video>` playing a mocked stream.
+   * Whether the mock should stand in for the frame-presentation signals a
+   * `<video>` playing a mocked stream would otherwise never receive.
    *
-   * WebKit on Linux under a virtual monitor decodes frames and advances
-   * `currentTime` but never presents any, and the callback fires on
-   * presentation — so it is never invoked, however healthy the stream is.
-   * Running WebKit headless restores it; this is for when the virtual monitor
-   * has to stay.
+   * WebKit on Linux decodes frames and advances `currentTime` but never
+   * *presents* any, and both readiness signals are derived from presentation:
+   * `requestVideoFrameCallback` never fires, and `readyState` never passes
+   * `HAVE_FUTURE_DATA` (3). Consumers waiting on either never start, however
+   * healthy the stream is. Running WebKit headless restores the callback but
+   * not `readyState`; nothing restores `readyState`.
    *
-   * Driven by evidence, not a timer: a callback fires only once the video's
-   * decoded frame count has actually advanced, so it goes quiet on a stalled
-   * stream exactly as the real one would. Videos playing anything else keep the
-   * browser's own implementation.
+   * With this on, both are answered from the same evidence: the video's decoded
+   * frame count actually advancing. Neither speaks before a frame has arrived,
+   * and both fall silent again if frames stop — so a stalled stream still looks
+   * stalled. Videos playing anything else keep the browser's own behaviour, and
+   * `unmock()` puts everything back.
    *
    * @default false
    */
@@ -344,6 +347,8 @@ export class MediaMockClass {
   private readonly microphone = new Microphone();
 
   private readonly frameCallbacks = new VideoFrameCallbackDriver();
+
+  private readonly readyState = new ReadyStateReporter();
 
   /** Streams this instance handed out, so the driver speaks only for them. */
   private readonly ownStreams = new WeakSet<MediaStream>();
@@ -649,7 +654,9 @@ export class MediaMockClass {
     this.produceAudio = resolved.audio;
 
     if (resolved.emulateVideoFrameCallback) {
-      this.frameCallbacks.install((stream) => this.ownStreams.has(stream));
+      const ours = (stream: MediaStream) => this.ownStreams.has(stream);
+      this.frameCallbacks.install(ours);
+      this.readyState.install(ours);
     }
 
     // Clone the config so addMockDevice/removeMockDevice never mutate the
@@ -701,6 +708,7 @@ export class MediaMockClass {
     this.mockedVideoTracksHandler = (tracks) => tracks;
     this.simulatedGetUserMediaError = null;
     this.frameCallbacks.uninstall();
+    this.readyState.uninstall();
     this.patcher.restoreAll();
 
     return this;

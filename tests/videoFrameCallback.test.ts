@@ -8,6 +8,10 @@ import { createMediaMock, devices } from "../lib/main";
  */
 const nativeRequest = HTMLVideoElement.prototype.requestVideoFrameCallback;
 const nativeCancel = HTMLVideoElement.prototype.cancelVideoFrameCallback;
+const nativeReadyState = Object.getOwnPropertyDescriptor(
+  HTMLMediaElement.prototype,
+  "readyState",
+)?.get as () => number;
 
 function attach(stream: MediaStream): HTMLVideoElement {
   const video = document.createElement("video");
@@ -117,6 +121,60 @@ describe("emulated requestVideoFrameCallback", () => {
     await nextFrame(video, 600);
 
     expect(await nextFrame(video, 600)).toBeNull();
+  });
+
+  it("should leave the native readyState alone by default", () => {
+    mock.mock(devices["iPhone 12"]);
+
+    expect(
+      Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "readyState")
+        ?.get,
+    ).toBe(nativeReadyState);
+  });
+
+  it("should restore the native readyState on unmock", () => {
+    mock.mock(devices["iPhone 12"], { emulateVideoFrameCallback: true });
+
+    mock.unmock();
+
+    expect(
+      Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "readyState")
+        ?.get,
+    ).toBe(nativeReadyState);
+  });
+
+  it("should report a complete readyState once frames arrive", async () => {
+    // WebKit on Linux parks a mocked stream at HAVE_FUTURE_DATA forever, so a
+    // consumer polling for 4 never starts. Other engines already report 4.
+    mock.mock(devices["iPhone 12"], { emulateVideoFrameCallback: true });
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    const video = attach(stream);
+    videos.push(video);
+    await video.play().catch(() => undefined);
+    await nextFrame(video);
+
+    expect(video.readyState).toBe(4);
+  });
+
+  it("should not claim readiness for a video with no stream", () => {
+    mock.mock(devices["iPhone 12"], { emulateVideoFrameCallback: true });
+    const video = document.createElement("video");
+    videos.push(video);
+
+    expect(video.readyState).toBe(0);
+  });
+
+  it("should report the browser's own readyState for someone else's stream", async () => {
+    mock.mock(devices["iPhone 12"], { emulateVideoFrameCallback: true });
+    const canvas = document.createElement("canvas");
+    canvas.width = 64;
+    canvas.height = 64;
+    canvas.getContext("2d")?.fillRect(0, 0, 64, 64);
+    const video = attach(canvas.captureStream(30));
+    videos.push(video);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    expect(video.readyState).toBe(nativeReadyState.call(video));
   });
 
   it("should leave a video playing someone else's stream to the browser", async () => {
