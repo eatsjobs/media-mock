@@ -8,6 +8,7 @@ import {
   videoConstraints,
 } from "./constraints";
 import type { MockMediaDeviceInfo } from "./createMediaDeviceInfo";
+import type { SupportedConstraints } from "./devices";
 
 /**
  * Deciding whether the emulated device can serve a request at all.
@@ -19,6 +20,11 @@ import type { MockMediaDeviceInfo } from "./createMediaDeviceInfo";
  * Only mandatory constraints are considered — `exact`, `min` and `max`. `ideal`
  * and bare values are advisory: browsers get as close as they can and never
  * reject over them.
+ *
+ * A constraint the emulated device reports as unsupported through
+ * `getSupportedConstraints()` is ignored rather than enforced, as a UA ignores
+ * a constraint it does not implement. Advertising a constraint as unsupported
+ * and then refusing a request over it would be incoherent.
  *
  * No DOM access: unit-tested in node.
  */
@@ -37,20 +43,33 @@ export function findUnsatisfiableConstraint({
   constraints,
   videoDevice,
   audioDevice,
+  supportedConstraints,
 }: {
   constraints: MediaStreamConstraints;
   videoDevice: MockMediaDeviceInfo | undefined;
   audioDevice: MockMediaDeviceInfo | undefined;
+  /** What the emulated device reports from `getSupportedConstraints()`. */
+  supportedConstraints: SupportedConstraints;
 }): string | null {
+  // Only an explicit `false` disables a check: a device that simply does not
+  // mention a constraint has not denied it.
+  const enforceable = (name: string): boolean =>
+    (supportedConstraints as Record<string, boolean | undefined>)[name] !==
+    false;
+
   if (isVideoRequested(constraints)) {
     const requested = videoConstraints(constraints);
 
-    const wrongCamera = checkDeviceId(requested, videoDevice);
+    const wrongCamera = enforceable("deviceId")
+      ? checkDeviceId(requested, videoDevice)
+      : null;
     if (wrongCamera) {
       return wrongCamera;
     }
 
-    const facingMode = extractExactStrings(requested.facingMode);
+    const facingMode = enforceable("facingMode")
+      ? extractExactStrings(requested.facingMode)
+      : null;
     if (facingMode) {
       const supported = videoDevice?.getCapabilities().facingMode;
       const canFace =
@@ -61,12 +80,17 @@ export function findUnsatisfiableConstraint({
       }
     }
 
-    const badSize = checkFrameSize(requested, videoDevice);
+    const badSize = checkFrameSize(requested, videoDevice, enforceable);
     if (badSize) {
       return badSize;
     }
 
-    const outOfRange = checkRanges(requested, videoDevice, VIDEO_RANGES);
+    const outOfRange = checkRanges(
+      requested,
+      videoDevice,
+      VIDEO_RANGES,
+      enforceable,
+    );
     if (outOfRange) {
       return outOfRange;
     }
@@ -75,12 +99,19 @@ export function findUnsatisfiableConstraint({
   if (isAudioRequested(constraints)) {
     const requested = audioConstraints(constraints);
 
-    const wrongMicrophone = checkDeviceId(requested, audioDevice);
+    const wrongMicrophone = enforceable("deviceId")
+      ? checkDeviceId(requested, audioDevice)
+      : null;
     if (wrongMicrophone) {
       return wrongMicrophone;
     }
 
-    const outOfRange = checkRanges(requested, audioDevice, AUDIO_RANGES);
+    const outOfRange = checkRanges(
+      requested,
+      audioDevice,
+      AUDIO_RANGES,
+      enforceable,
+    );
     if (outOfRange) {
       return outOfRange;
     }
@@ -119,6 +150,7 @@ function checkDeviceId(
 function checkFrameSize(
   requested: MediaTrackConstraints,
   device: MockMediaDeviceInfo | undefined,
+  enforceable: (name: string) => boolean,
 ): string | null {
   const capabilities = device?.getCapabilities();
   const widthRange = capabilities?.width;
@@ -127,8 +159,8 @@ function checkFrameSize(
     return null;
   }
 
-  const width = extractBounds(requested.width);
-  const height = extractBounds(requested.height);
+  const width = enforceable("width") ? extractBounds(requested.width) : {};
+  const height = enforceable("height") ? extractBounds(requested.height) : {};
 
   const upright = !exceeds(width, widthRange) && !exceeds(height, heightRange);
   const rotated = !exceeds(width, heightRange) && !exceeds(height, widthRange);
@@ -148,12 +180,17 @@ function checkRanges(
   requested: MediaTrackConstraints,
   device: MockMediaDeviceInfo | undefined,
   names: readonly string[],
+  enforceable: (name: string) => boolean,
 ): string | null {
   const capabilities = device?.getCapabilities() as
     | Record<string, unknown>
     | undefined;
 
   for (const name of names) {
+    if (!enforceable(name)) {
+      continue;
+    }
+
     const range = capabilities?.[name] as
       | { min?: number; max?: number }
       | undefined;

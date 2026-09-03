@@ -718,7 +718,10 @@ export class MediaMockClass {
 
     // getUserMedia is all-or-nothing: a request naming a kind the device does
     // not have fails outright rather than returning the other kind.
-    if (wantsAudio && !audioDevice) {
+    // A runtime with no Web Audio cannot produce an audio track at all, which
+    // is indistinguishable from having no microphone: refuse up front rather
+    // than build the video half and hand back a partial stream.
+    if (wantsAudio && (!audioDevice || !Microphone.isSupported())) {
       throw createGetUserMediaError("NotFoundError");
     }
     if (wantsVideo && !videoDevice) {
@@ -731,6 +734,7 @@ export class MediaMockClass {
       constraints,
       videoDevice,
       audioDevice,
+      supportedConstraints: this.state.constraints,
     });
     if (unsatisfiable) {
       throw createGetUserMediaError("OverconstrainedError", {
@@ -746,10 +750,13 @@ export class MediaMockClass {
 
     if (wantsAudio) {
       const audioTrack = this.microphone.open();
-      if (audioTrack) {
-        decorateAudioTrack(audioTrack, { device: audioDevice });
-        tracks.push(audioTrack);
+      if (!audioTrack) {
+        // Guarded above, so this is unreachable — but silently dropping the
+        // track here is the one thing the all-or-nothing contract forbids.
+        throw createGetUserMediaError("NotFoundError");
       }
+      decorateAudioTrack(audioTrack, { device: audioDevice });
+      tracks.push(audioTrack);
     }
 
     this.currentStream = new MediaStream(tracks);

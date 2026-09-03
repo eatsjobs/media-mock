@@ -116,6 +116,41 @@ describe("audio", () => {
     expect(track.readyState).toBe("ended");
   });
 
+  it("should reject rather than drop the audio track where Web Audio is missing", async () => {
+    // getUserMedia is all-or-nothing. A runtime with no AudioContext cannot
+    // produce the track, so the whole call has to fail rather than quietly
+    // handing back a video-only stream.
+    mock.mock(devices["iPhone 12"]);
+    const nativeAudioContext = globalThis.AudioContext;
+    // @ts-expect-error - simulating a runtime without Web Audio
+    delete globalThis.AudioContext;
+
+    try {
+      await expect(
+        navigator.mediaDevices.getUserMedia({ video: true, audio: true }),
+      ).rejects.toMatchObject({ name: "NotFoundError" });
+    } finally {
+      globalThis.AudioContext = nativeAudioContext;
+    }
+  });
+
+  it("should leave no canvas behind when Web Audio is missing", async () => {
+    mock.mock(devices["iPhone 12"]);
+    const nativeAudioContext = globalThis.AudioContext;
+    // @ts-expect-error - simulating a runtime without Web Audio
+    delete globalThis.AudioContext;
+
+    try {
+      await navigator.mediaDevices
+        .getUserMedia({ video: true, audio: true })
+        .catch(() => undefined);
+
+      expect(document.getElementById("media-mock-canvas")).toBeNull();
+    } finally {
+      globalThis.AudioContext = nativeAudioContext;
+    }
+  });
+
   it("should reject an audio request on a device with no microphone", async () => {
     // Real hardware answers a request for a device it does not have with
     // NotFoundError rather than substituting something else.

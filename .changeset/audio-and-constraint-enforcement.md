@@ -8,7 +8,9 @@ Emulate microphones, and refuse constraints the emulated device cannot meet.
 
 **Mandatory constraints are now enforced.** `exact`, `min` and `max` are mandatory in `getUserMedia`, and a real camera refuses a request it cannot serve. The mock now does the same, rejecting with an `OverconstrainedError` whose `constraint` names the failure, checked against the selected device's `getCapabilities()`: `width` and `height` (in either orientation, since a sensor held sideways produces the transpose), `frameRate`, `aspectRatio`, plus `channelCount`, `sampleRate` and `sampleSize` for audio. `ideal` and bare values remain advisory and never reject.
 
-**Requests are also refused when they name nothing, or name a device that is absent.** `getUserMedia({})` and `getUserMedia({ video: false })` reject with a `TypeError`, as browsers do. A request for a kind the emulated device does not have fails the whole call with `NotFoundError` — `getUserMedia` is all-or-nothing.
+**Requests are also refused when they name nothing, or name a device that is absent.** `getUserMedia({})` and `getUserMedia({ video: false })` reject with a `TypeError`, as browsers do. A request for a kind the emulated device does not have fails the whole call with `NotFoundError` — `getUserMedia` is all-or-nothing, and that holds for a runtime without Web Audio too: it cannot produce an audio track, so an audio request fails rather than returning a video-only stream.
+
+**A constraint the device reports as unsupported is ignored rather than enforced.** `getSupportedConstraints()` is the mock's own statement of what it implements, so refusing a request over a constraint it advertises as `false` would be incoherent. Only an explicit `false` disables a check — a device config that simply does not mention a constraint has not denied it.
 
 Three behaviour changes to be aware of when upgrading:
 

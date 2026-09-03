@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { findUnsatisfiableConstraint } from "../../lib/constraintCheck";
 import { createMediaDeviceInfo } from "../../lib/createMediaDeviceInfo";
+import type { SupportedConstraints } from "../../lib/devices";
 
 const backCamera = createMediaDeviceInfo({
   deviceId: "back-1",
@@ -20,14 +21,21 @@ const microphone = createMediaDeviceInfo({
   groupId: "group-mic",
   kind: "audioinput",
   label: "Microphone",
-  mockCapabilities: { channelCount: { min: 1, max: 2 } },
+  mockCapabilities: {
+    channelCount: { min: 1, max: 2 },
+    sampleRate: { min: 44100, max: 48000 },
+  },
 });
 
-const check = (constraints: MediaStreamConstraints) =>
+const check = (
+  constraints: MediaStreamConstraints,
+  supportedConstraints: SupportedConstraints = {},
+) =>
   findUnsatisfiableConstraint({
     constraints,
     videoDevice: backCamera,
     audioDevice: microphone,
+    supportedConstraints,
   });
 
 describe("findUnsatisfiableConstraint", () => {
@@ -97,6 +105,26 @@ describe("findUnsatisfiableConstraint", () => {
     );
   });
 
+  it("should enforce a range the device reports as a supported constraint", () => {
+    expect(
+      check({ audio: { sampleRate: { exact: 8000 } } }, { sampleRate: true }),
+    ).toBe("sampleRate");
+  });
+
+  it("should ignore a constraint the device reports as unsupported", () => {
+    // A UA ignores a constraint it does not implement, so a mock that both
+    // advertises sampleRate as unsupported and rejects over it is incoherent.
+    expect(
+      check({ audio: { sampleRate: { exact: 8000 } } }, { sampleRate: false }),
+    ).toBeNull();
+  });
+
+  it("should ignore an unsupported video constraint too", () => {
+    expect(
+      check({ video: { width: { exact: 99999 } } }, { width: false }),
+    ).toBeNull();
+  });
+
   it("should not check video constraints when video was not requested", () => {
     expect(check({ audio: true, video: false })).toBeNull();
   });
@@ -115,6 +143,7 @@ describe("findUnsatisfiableConstraint", () => {
         constraints: { video: { width: { exact: 99999 } } },
         videoDevice: bare,
         audioDevice: undefined,
+        supportedConstraints: {},
       }),
     ).toBeNull();
   });

@@ -114,6 +114,21 @@ describe("unsatisfiable constraints", () => {
     });
   });
 
+  it("should not reject over a constraint the device reports as unsupported", async () => {
+    // The iPhone 12 preset advertises sampleRate: false, so a sampleRate the
+    // microphone cannot produce must be ignored rather than refused.
+    mock.mock(devices["iPhone 12"]);
+    expect(navigator.mediaDevices.getSupportedConstraints().sampleRate).toBe(
+      false,
+    );
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { sampleRate: { exact: 8000 } },
+    });
+
+    expect(stream.getAudioTracks()).toHaveLength(1);
+  });
+
   it("should leave no canvas behind when a request is refused", async () => {
     mock.mock(devices["iPhone 12"]);
 

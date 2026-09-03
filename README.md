@@ -299,7 +299,7 @@ The track is produced by a Web Audio `MediaStreamAudioDestinationNode` with noth
 | `Samsung Galaxy M53` | `Default - Microphone (Built-in)` | `Default - Speaker` |
 | `Mac Desktop` | `MacBook Pro Microphone (Built-in)` | `MacBook Pro Speakers (Built-in)` |
 
-Requesting a kind the emulated device does not have fails the whole call with `NotFoundError`, exactly as `getUserMedia` does on real hardware — it is all-or-nothing, never a partial stream.
+Requesting a kind the emulated device does not have fails the whole call with `NotFoundError`, exactly as `getUserMedia` does on real hardware — it is all-or-nothing, never a partial stream. The same applies in a runtime with no Web Audio: no audio track can be produced there, so the call fails rather than returning video only.
 
 ## Constraints the device cannot meet
 
@@ -326,7 +326,7 @@ await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 99999 } } }
 // resolves, snapped to the closest resolution the device supports
 ```
 
-Checked against the selected device's `getCapabilities()`: `width`, `height` (in either orientation, since a sensor held sideways produces the transpose), `frameRate`, `aspectRatio`, and for audio `channelCount`, `sampleRate`, `sampleSize`. A capability the device does not declare is not checked. Requesting neither `video` nor `audio` rejects with a `TypeError`, as browsers do.
+Checked against the selected device's `getCapabilities()`: `width`, `height` (in either orientation, since a sensor held sideways produces the transpose), `frameRate`, `aspectRatio`, and for audio `channelCount`, `sampleRate`, `sampleSize`. A capability the device does not declare is not checked, and neither is a constraint the device reports as unsupported through `getSupportedConstraints()` — a UA ignores a constraint it does not implement. Requesting neither `video` nor `audio` rejects with a `TypeError`, as browsers do.
 
 ## Simulating Errors
 
