@@ -65,13 +65,54 @@ function synthesizeMediaDevices(): VoidFunction | undefined {
 }
 
 /**
+ * Ownership of the invented globals, which are process-wide while each patcher
+ * is not.
+ *
+ * `createMediaMock()` exists so tests can hold independent instances, so two
+ * can be mocking at once. The first to arrive invents the globals and the last
+ * to leave takes them away — otherwise the first to unmock would delete a
+ * `navigator` the second is still using.
+ */
+let invented: { undo: VoidFunction; holders: number } | undefined;
+
+/**
+ * Claims a share of the invented globals, creating them if this is the first
+ * claim. The returned release is idempotent.
+ */
+function acquireMediaDevices(): VoidFunction | undefined {
+  if (!invented) {
+    const undo = synthesizeMediaDevices();
+    if (!undo) {
+      return undefined;
+    }
+    invented = { undo, holders: 0 };
+  }
+
+  invented.holders++;
+  let released = false;
+
+  return () => {
+    if (released || !invented) {
+      return;
+    }
+    released = true;
+    invented.holders--;
+
+    if (invented.holders === 0) {
+      invented.undo();
+      invented = undefined;
+    }
+  };
+}
+
+/**
  * Holds the native implementations while mocks are installed.
  */
 export class MediaDevicesPatcher {
   private readonly originals = new Map<PatchableMethod, AnyFn>();
 
-  /** Undo for a `MediaDevices` this patcher had to invent. */
-  private undoSynthesis: VoidFunction | undefined;
+  /** This patcher's share of an invented `MediaDevices`, if it took one. */
+  private releaseSynthesis: VoidFunction | undefined;
 
   /**
    * Whether the mock can be installed here: either the environment has a real
@@ -96,8 +137,11 @@ export class MediaDevicesPatcher {
    * already holds a mock, and saving that would lose the native permanently.
    */
   patch(method: PatchableMethod, mockFn: AnyFn): void {
-    if (typeof MediaDevices === "undefined") {
-      this.undoSynthesis ??= synthesizeMediaDevices();
+    // `invented` covers the case where another patcher already supplied the
+    // globals: this one must take a share too, or the other's unmock would pull
+    // them out from under it.
+    if (typeof MediaDevices === "undefined" || invented) {
+      this.releaseSynthesis ??= acquireMediaDevices();
     }
     if (typeof MediaDevices === "undefined") {
       return;
@@ -135,8 +179,8 @@ export class MediaDevicesPatcher {
     }
     this.originals.clear();
 
-    // A synthesized MediaDevices is ours to remove; a native one is not.
-    this.undoSynthesis?.();
-    this.undoSynthesis = undefined;
+    // A synthesized MediaDevices is ours to let go of; a native one is not.
+    this.releaseSynthesis?.();
+    this.releaseSynthesis = undefined;
   }
 }

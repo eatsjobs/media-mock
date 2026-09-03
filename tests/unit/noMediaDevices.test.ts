@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMediaDeviceInfo } from "../../lib/createMediaDeviceInfo";
 import { createMediaMock, devices } from "../../lib/main";
 
@@ -59,6 +59,55 @@ describe("node, with no DOM at all", () => {
       expect(globalThis.navigator).toBeUndefined();
     } finally {
       globalThis.navigator = nativeNavigator;
+    }
+  });
+
+  it("should keep the invented globals while another instance still mocks", () => {
+    // createMediaMock() exists for isolation, so two instances in one process is
+    // a supported shape. The first to invent the globals must not pull them out
+    // from under the second.
+    const nativeNavigator = globalThis.navigator;
+    // @ts-expect-error - simulating Node 16-20
+    delete globalThis.navigator;
+    const first = createMediaMock();
+    const second = createMediaMock();
+
+    try {
+      first.mock(devices["iPhone 12"], frameless);
+      second.mock(devices["iPhone 12"], frameless);
+
+      first.unmock();
+
+      // Unpatching the shared prototype is the documented single-mocker
+      // limitation; destroying the environment out from under the second
+      // instance is not. The invented globals have to outlive the first release.
+      expect(globalThis.navigator).toBeDefined();
+      expect(typeof MediaDevices).toBe("function");
+
+      second.unmock();
+      expect(globalThis.navigator).toBeUndefined();
+      expect(typeof MediaDevices).toBe("undefined");
+    } finally {
+      first.unmock();
+      second.unmock();
+      globalThis.navigator = nativeNavigator;
+    }
+  });
+
+  it("should warn and do nothing where it cannot even build an EventTarget", () => {
+    // The one environment left that cannot be mocked at all.
+    const nativeEventTarget = globalThis.EventTarget;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    // @ts-expect-error - simulating a runtime with no EventTarget
+    delete globalThis.EventTarget;
+
+    try {
+      expect(() => mock.mock(devices["iPhone 12"], frameless)).not.toThrow();
+      expect(warn).toHaveBeenCalled();
+      expect(globalThis.navigator?.mediaDevices).toBeUndefined();
+    } finally {
+      globalThis.EventTarget = nativeEventTarget;
+      warn.mockRestore();
     }
   });
 

@@ -15,6 +15,10 @@
  * whichever interface happened to exist at the first call. Everything an object
  * needs is its own property, so nothing inherited can shadow it.
  *
+ * Each object is also a real `EventTarget`, so an event dispatched on it
+ * reports it as `event.target` — which is how a consumer works out which track
+ * ended.
+ *
  * No canvas, no codecs: usable wherever `EventTarget` exists.
  */
 
@@ -30,17 +34,92 @@ function nativePrototype(globalName: string): object | null {
   return (nativeInterface as { prototype?: object }).prototype ?? null;
 }
 
-/** An object inheriting from `globalName`'s prototype where one exists. */
+/** Whether `prototype` already inherits EventTarget's behaviour. */
+function chainsToEventTarget(prototype: object): boolean {
+  for (
+    let link: object | null = prototype;
+    link !== null;
+    link = Object.getPrototypeOf(link)
+  ) {
+    if (link === EventTarget.prototype) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * An object wearing `globalName`'s prototype where one exists.
+ *
+ * A real `MediaStreamTrack.prototype` inherits from `EventTarget.prototype`, so
+ * there the object can be a genuine EventTarget wearing that prototype: events
+ * dispatched on it report it as `event.target`, and both `instanceof` checks
+ * answer. The runtime brand-checks against the prototype chain, so this only
+ * works when the chain reaches EventTarget.prototype — which is also why the
+ * fallback is `EventTarget.prototype` rather than `Object.prototype`.
+ *
+ * An emulator's prototype does not inherit from EventTarget (happy-dom's
+ * carries only a constructor), so there the object is a plain one and events go
+ * through {@link eventMethodsFor}'s stand-in instead.
+ */
 function inheritingFrom(globalName: string): Record<string, unknown> {
-  return Object.create(nativePrototype(globalName) ?? Object.prototype);
+  const prototype = nativePrototype(globalName) ?? EventTarget.prototype;
+
+  if (chainsToEventTarget(prototype)) {
+    // A real EventTarget, re-prototyped onto the interface being impersonated.
+    // The brand survives because the new chain still reaches
+    // `EventTarget.prototype`, which is what the runtime checks.
+    const object = new EventTarget();
+    Object.setPrototypeOf(object, prototype);
+    return object as unknown as Record<string, unknown>;
+  }
+
+  return Object.create(prototype);
+}
+
+/**
+ * Event plumbing for `target`.
+ *
+ * A genuine EventTarget uses its own methods, unbound so that calling
+ * `track.addEventListener(...)` acts on the track. Anything else dispatches
+ * through an EventTarget of ours, with the event retargeted first — otherwise
+ * every listener would see that internal object as `event.target` rather than
+ * the track that ended.
+ */
+function eventMethodsFor(target: object): Record<string, unknown> {
+  if (target instanceof EventTarget) {
+    return {
+      addEventListener: EventTarget.prototype.addEventListener,
+      removeEventListener: EventTarget.prototype.removeEventListener,
+      dispatchEvent: EventTarget.prototype.dispatchEvent,
+    };
+  }
+
+  const events = new EventTarget();
+  return {
+    addEventListener: events.addEventListener.bind(events),
+    removeEventListener: events.removeEventListener.bind(events),
+    dispatchEvent: (event: Event): boolean => {
+      // An own property shadows Event.prototype's getter, which the dispatch
+      // below would otherwise point at `events`.
+      for (const name of ["target", "currentTarget"]) {
+        Object.defineProperty(event, name, {
+          value: target,
+          configurable: true,
+          enumerable: true,
+        });
+      }
+      return events.dispatchEvent(event);
+    },
+  };
 }
 
 /**
  * Installs `members` as own properties.
  *
- * Not `Object.assign`: an adopted prototype may declare a member as a
- * getter with no setter — happy-dom's `MediaStreamTrack.prototype` does
- * exactly that for `kind` — and plain assignment through it throws.
+ * Not `Object.assign`: an adopted prototype may declare a member as a getter
+ * with no setter — happy-dom's `MediaStreamTrack.prototype` does exactly that
+ * for `kind` — and plain assignment through it throws.
  */
 function defineOwn(
   target: Record<string, unknown>,
@@ -67,7 +146,6 @@ function randomId(prefix: string): string {
  * `decorateVideoTrack`, exactly as they are for a real capture track.
  */
 export function createSyntheticVideoTrack(): MediaStreamTrack {
-  const events = new EventTarget();
   const track = inheritingFrom("MediaStreamTrack");
 
   const stop = (): void => {
@@ -75,7 +153,7 @@ export function createSyntheticVideoTrack(): MediaStreamTrack {
       return;
     }
     track.readyState = "ended";
-    events.dispatchEvent(new Event("ended"));
+    (track as unknown as EventTarget).dispatchEvent(new Event("ended"));
   };
 
   defineOwn(track, {
@@ -94,9 +172,7 @@ export function createSyntheticVideoTrack(): MediaStreamTrack {
     // stopping either ends both.
     clone: (): unknown => track,
     stop,
-    addEventListener: events.addEventListener.bind(events),
-    removeEventListener: events.removeEventListener.bind(events),
-    dispatchEvent: events.dispatchEvent.bind(events),
+    ...eventMethodsFor(track),
   });
 
   return track as unknown as MediaStreamTrack;
@@ -109,7 +185,6 @@ export function createSyntheticVideoTrack(): MediaStreamTrack {
 export function createSyntheticStream(
   tracks: readonly MediaStreamTrack[],
 ): MediaStream {
-  const events = new EventTarget();
   const held = [...tracks];
   const stream = inheritingFrom("MediaStream");
 
@@ -134,9 +209,7 @@ export function createSyntheticStream(
       }
     },
     clone: (): MediaStream => createSyntheticStream(held),
-    addEventListener: events.addEventListener.bind(events),
-    removeEventListener: events.removeEventListener.bind(events),
-    dispatchEvent: events.dispatchEvent.bind(events),
+    ...eventMethodsFor(stream),
   });
 
   Object.defineProperty(stream, "active", {

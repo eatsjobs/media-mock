@@ -110,6 +110,37 @@ describe("synthetic media objects", () => {
     expect(stream.getTracks()).toHaveLength(1);
   });
 
+  it("should report the track itself as the event target", () => {
+    // A consumer reading `event.target` in an `ended` handler to work out which
+    // track fired must get the track, as it would from real hardware.
+    const track = createSyntheticVideoTrack();
+    let target: unknown = "no event fired";
+    track.addEventListener("ended", (event) => {
+      target = event.target;
+    });
+
+    track.stop();
+
+    expect(target).toBe(track);
+  });
+
+  it("should be an EventTarget where no native interface exists", () => {
+    expect(createSyntheticVideoTrack()).toBeInstanceOf(EventTarget);
+    expect(createSyntheticStream([])).toBeInstanceOf(EventTarget);
+  });
+
+  it("should report the stream itself as the event target", () => {
+    const stream = createSyntheticStream([]);
+    let target: unknown = "no event fired";
+    stream.addEventListener("addtrack", (event) => {
+      target = event.target;
+    });
+
+    stream.dispatchEvent(new Event("addtrack"));
+
+    expect(target).toBe(stream);
+  });
+
   it("should still deliver events", () => {
     const track = createSyntheticVideoTrack();
     let ended = 0;
