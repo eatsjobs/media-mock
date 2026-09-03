@@ -1,5 +1,73 @@
 # @eatsjobs/media-mock
 
+## 2.1.0
+
+### Minor Changes
+
+- 1362601: Emulate microphones, and refuse constraints the emulated device cannot meet.
+
+  **Audio.** Every preset now exposes an `audioinput` — and, where the real device has one, an `audiooutput` — so they appear in `enumerateDevices()` alongside the cameras. `getUserMedia({ audio: true })` returns a live, silent audio track (a Web Audio `MediaStreamAudioDestinationNode` with nothing connected) carrying the emulated microphone's label, `deviceId`, `groupId` and capabilities. `{ video: true, audio: true }` returns one track of each; an audio-only request builds no capture canvas. Previously `audio` was ignored entirely: an audio-only request handed back a _video_ track, and `enumerateDevices()` listed no microphone at all.
+
+  **Mandatory constraints are now enforced.** `exact`, `min` and `max` are mandatory in `getUserMedia`, and a real camera refuses a request it cannot serve. The mock now does the same, rejecting with an `OverconstrainedError` whose `constraint` names the failure, checked against the selected device's `getCapabilities()`: `width` and `height` (in either orientation, since a sensor held sideways produces the transpose), `frameRate`, `aspectRatio`, plus `channelCount`, `sampleRate` and `sampleSize` for audio. `ideal` and bare values remain advisory and never reject.
+
+  **Requests are also refused when they name nothing, or name a device that is absent.** `getUserMedia({})` and `getUserMedia({ video: false })` reject with a `TypeError`, as browsers do. A request for a kind the emulated device does not have fails the whole call with `NotFoundError` — `getUserMedia` is all-or-nothing, and that holds for a runtime without Web Audio too: it cannot produce an audio track, so an audio request fails rather than returning a video-only stream.
+
+  **A constraint the device reports as unsupported is ignored rather than enforced.** `getSupportedConstraints()` is the mock's own statement of what it implements, so refusing a request over a constraint it advertises as `false` would be incoherent. Only an explicit `false` disables a check — a device config that simply does not mention a constraint has not denied it.
+
+  Three behaviour changes to be aware of when upgrading:
+
+  - `getUserMedia({})` / `{ video: false }` used to resolve with a video stream and now throw a `TypeError`.
+  - `deviceId: { exact: "…" }` naming a camera that does not exist used to fall back to `facingMode`; it now rejects. An `ideal` deviceId still falls back.
+  - A `width`/`height`/`frameRate` `exact` value outside the device's declared capabilities used to be snapped to the nearest supported resolution; it now rejects.
+
+  All three were the mock succeeding where real hardware fails, so the tests they let pass were not exercising the caller's failure path.
+
+  Also fixed: `addMockDevice()` and `removeMockDevice()` threw in an environment with no `MediaDevices` (node), where `mock()` already warned and carried on. And the patched `getUserMedia`, `enumerateDevices` and `getSupportedConstraints` now carry the native method's `name` and arity, which feature detection and argument-forwarding wrappers read.
+
+- a128750: Run in a DOM emulator — node, happy-dom or jsdom — for unit tests that need a camera but not pixels. The library's emulator suite runs green on all three.
+
+  `mock()` previously required a real `MediaDevices`; without one it warned and did nothing, so every later call failed with `Cannot read properties of undefined`. It now supplies its own `navigator.mediaDevices` where the environment has none, and `unmock()` takes it away again. That alone makes the whole device layer usable outside a browser: enumeration, capabilities, device selection by `deviceId`/`facingMode`, constraint refusal, error simulation, redaction while permission is denied, and `devicechange` events.
+
+  Frames and audio still need a real browser, so both are now opt-out:
+
+  ```typescript
+  MediaMock.mock(devices["iPhone 12"], { frames: false, audio: false });
+  ```
+
+  With `frames: false` the returned video track carries the emulated camera's label, ids, settings and capabilities but no pixels, and no canvas is built. With `audio: false` a request for audio is refused with `NotFoundError` rather than quietly returning a stream without it. Both default to `true`, and leaving `frames` on in an environment that cannot paint now raises an error naming the option instead of failing deeper in the canvas.
+
+  `MockOptions.mediaDevices` and its members are now optional, so `mock(device, { frames: false })` no longer has to restate the defaults.
+
+  Node grew a global `navigator` only in v21, and this package supports older ones, so `mock()` supplies that too where it is missing — otherwise plain-Node usage below v21 would silently fall back to doing nothing. Anything invented is removed again on `unmock()`.
+
+  Whether the environment can paint at all is now checked before any media is loaded. jsdom's `<img>` never fires `load` or `error` for a data URI, so a frames request there used to hang for the full media timeout before failing somewhere less obvious; it now fails immediately, naming `frames: false`.
+
+  Three fixes fall out of this, and apply in real browsers too:
+
+  - `stopMockStream` called `MediaStream.getTracks()`, which happy-dom does not implement — the cause of issue #11. It now falls back to the per-kind accessors.
+  - `loadImage` called `image.decode()` unconditionally; jsdom does not implement it at all, so the call threw rather than being skipped.
+  - `createGetUserMediaError` trusted any global named `OverconstrainedError`. happy-dom exposes one that builds something `Event`-shaped with neither `name` nor `constraint`, so the constructed error is now checked and the `DOMException` fallback used when it does not answer correctly.
+
+### Patch Changes
+
+- 1362601: Stop failing an image source that loaded and draws but whose `decode()` rejects.
+
+  WebKit on Linux — Playwright's build, so any CI container running WebKit — rejects `HTMLImageElement.decode()` with `EncodingError` for a 1×1 image, even though the image has loaded and `drawImage` handles it correctly. Measured against the same image with and without CORS, at 1×1 and 2×2, and against a file: only the 1×1 case fails, and only in `decode()`.
+
+  The default placeholder source is a 1×1 PNG, so every `getUserMedia` call that was not preceded by an explicit `setSource()` failed outright under WebKit on Linux with `Failed to load image: data:image/png;base64,… EncodingError: Decoding error.`
+
+  `decode()` is now advisory. It is still awaited — it is what gets pixel data ready ahead of the first capture — but a rejection no longer fails the load. The 1×1 warmup `drawImage` that follows is the real guarantee that the pixels are usable, and an image that genuinely cannot be drawn still rejects there.
+
+- 1362601: Report the emulated camera's capabilities on the video track, and stop handing out mutable internal state.
+
+  `track.getCapabilities()` returned the capabilities of the capture canvas rather than of the device being emulated. Chromium and WebKit both attach a `getCapabilities()` of their own to a `captureStream()` track, and the mock only installed the device's when that method was missing — which it never was. Consumers therefore saw `facingMode: []`, no `torch`, no `zoom`, no `whiteBalanceMode`, and a `deviceId` belonging to the canvas capture that matched no entry in `enumerateDevices()` and disagreed with `getSettings().deviceId`. The emulated device's capabilities now win, with `deviceId` and `groupId` taken from the device entry so they agree with the track's settings.
+
+  Three places handed out live internal objects, so a caller who edited what they were given silently reconfigured the mock — and, since the exported device presets are module-level singletons, every other consumer of that preset too:
+
+  - `getSupportedConstraints()` returned the mock's own constraints object. It now returns a fresh copy per call, as browsers do.
+  - `MediaDeviceInfo.getCapabilities()` — on both `enumerateDevices()` entries and a decorated track — returned the preset's capabilities object. It now returns a fresh copy per call.
+  - `MediaMock.settings` was documented as a frozen snapshot but was only frozen at the top level, so `settings.constraints.width = false` or `settings.device.mediaDeviceInfo.push(...)` reached straight into the mock. The snapshot is now copied and frozen all the way down; writes at any depth throw, as the documentation always said. Use `configure()` and `addMockDevice()`/`removeMockDevice()` to make changes, as before.
+
 ## 2.0.2
 
 ### Patch Changes
