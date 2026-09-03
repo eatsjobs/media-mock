@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - main
+  # Lets a release be retried without an empty commit. A publish that npm did
+  # not actually record leaves nothing to push, and `pnpm release` checks the
+  # registry first, so re-running is safe either way.
+  workflow_dispatch:
 
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
