@@ -18,3 +18,5 @@ track.getSettings().torch;                                  // true
 ```
 
 Ranges and lists are honoured the same way, so `zoom` within the advertised range and a `whiteBalanceMode` the device lists are accepted too. `advanced` stays best effort as the specification requires — an entry the device cannot meet is skipped rather than failing the call — while a mandatory constraint it cannot meet is refused with `OverconstrainedError` naming it. Anything the device does not advertise is still the browser's to answer.
+
+MIGRATION.md now documents the `getCapabilities()` change itself, which arrived in 2.1 and was not written down anywhere — it is the one most likely to surface in an existing suite, and it reaches anyone upgrading from 1.x too.

@@ -1,5 +1,7 @@
 # Migration guide
 
+Upgrading from 1.x reaches the current release through every section below, so read them all — the change most likely to surface in an existing test suite is [`getCapabilities()`](#getcapabilities-now-describes-the-emulated-camera), in 2.0 → 2.1.
+
 ## 2.0 → 2.1
 
 No API changed shape, but three requests that used to succeed now fail — in each case because the mock was succeeding where real hardware fails, so a test relying on the old behaviour was never exercising its own failure path.
@@ -29,6 +31,37 @@ If it pinned a camera by an id that may not exist, make the hint advisory:
 Microphones are new rather than changed — every preset now lists an `audioinput`, so `enumerateDevices()` returns more entries than it did, and code asserting an exact device count needs updating. See [Audio](./README.md#audio).
 
 ---
+
+### `getCapabilities()` now describes the emulated camera
+
+This is the change most likely to show up in an existing test suite, and it reaches anyone coming from 1.x as well.
+
+Until 2.1 the mock only supplied `getCapabilities()` when the track lacked one — and a canvas-capture track always has one, in every engine. So the emulated device's capabilities were never visible; what a consumer read was the capture canvas:
+
+```typescript
+// 1.x and 2.0
+track.getCapabilities();
+// { aspectRatio, deviceId, facingMode, frameRate, height, resizeMode, width }
+```
+
+From 2.1 the emulated camera answers, so the features the presets declare are finally reachable:
+
+```typescript
+// 2.1 and later, iPhone 12 back camera
+track.getCapabilities();
+// { …, focusDistance, groupId, torch: true, whiteBalanceMode, zoom: { min: 1, max: 4 } }
+```
+
+`deviceId` and `groupId` in the capabilities now match `getSettings()` and an entry in `enumerateDevices()`; before they were the capture's own random id, which matched nothing.
+
+**What this changes for your tests.** Code that feature-detects on capabilities — `if (track.getCapabilities().torch)` — now takes a branch it never took before, and goes on to request that feature. Through 2.3.0 `applyConstraints()` still refused it with `OverconstrainedError: Unsupported constraint`, because the request reached the capture track underneath. From 2.3.1 the mock settles constraints it advertised and reports them in `getSettings()`:
+
+```typescript
+await track.applyConstraints({ advanced: [{ torch: true }] });
+track.getSettings().torch; // true
+```
+
+If you would rather a device did not advertise a feature at all, build it with [`createMediaDeviceInfo`](./README.md#createmediadeviceinfo) and leave that capability out.
 
 ## 1.x → 2.0
 
