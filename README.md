@@ -682,7 +682,7 @@ interface MockOptions {
 - **mediaDevices.enumerateDevices**: `boolean` (default `true`) - Enables `navigator.mediaDevices.enumerateDevices`.
 - **frames**: `boolean` (default `true`) - Whether to paint real video frames. Needs a canvas with a 2D context and `captureStream()`, so set `false` in a DOM emulator. See [Unit testing without a browser](#unit-testing-without-a-browser).
 - **audio**: `boolean` (default `true`) - Whether to produce an audio track. Needs Web Audio; with `false`, a request for audio is refused with `NotFoundError`.
-- **forceReadyState**: `boolean` (default `false`) - Report `HAVE_ENOUGH_DATA` for a `<video>` playing a mocked stream that the browser has parked at `HAVE_FUTURE_DATA`. See [When the waiting code cannot be changed](#when-the-waiting-code-cannot-be-changed).
+- **forceReadyState**: `boolean` (default `true`) - Report `HAVE_ENOUGH_DATA` for a `<video>` playing a mocked stream that the browser has parked at `HAVE_FUTURE_DATA`, which WebKitGTK does permanently. Cannot fire on an engine that reports 4 on its own. See [What the mock does about it](#what-the-mock-does-about-it).
 
 ### `Settings`
 
@@ -779,9 +779,13 @@ The mock replaces methods on `MediaDevices.prototype`, so it takes effect from t
 - **Install it before the page's own scripts.** If your app calls `getUserMedia` during startup, set the mock up in `page.addInitScript()` rather than after `page.goto()`.
 - **It does not reach into iframes.** Each frame is its own realm with its own `MediaDevices.prototype`. A page under test that runs your camera code inside an iframe will see the real (or missing) camera there.
 
-### WebKit on Linux never reports `readyState === 4`
+### WebKitGTK never reports `readyState === 4`
 
-A `<video>` fed a `MediaStream` stays at `HAVE_FUTURE_DATA` (3) forever under WebKit on Linux — in a CI container, or anywhere Playwright's Linux WebKit build is used. It is not specific to this library: a bare `canvas.captureStream()` behaves the same way, while a plain video file in the same browser reaches 4. Chromium on Linux and WebKit on macOS both reach 4.
+A `<video>` fed a `MediaStream` stays at `HAVE_FUTURE_DATA` (3) forever under **WebKitGTK** — WebKit on Linux, which is the build Playwright ships and CI containers run. WebKit on macOS and on real machines reaches 4, as does Chromium everywhere, so this is a limitation of that one port rather than of WebKit generally.
+
+It is not specific to this library either: a bare `canvas.captureStream()` behaves the same way there, while a plain video file in the same browser reaches 4.
+
+**The mock corrects this for you by default** — see [`forceReadyState`](#mockoptions). The paragraphs below still describe the portable approach, which is worth following anyway for code that runs against real cameras.
 
 Playback is healthy regardless — `currentTime` advances, frames arrive at the requested rate — so wait on an event rather than polling the property:
 
@@ -799,17 +803,24 @@ await new Promise((resolve) => video.requestVideoFrameCallback(resolve));
 
 `canplay`, `canplaythrough`, `loadeddata` and `playing` all fire on both engines. Only `readyState === 4` is unreliable.
 
-#### When the waiting code cannot be changed
+#### What the mock does about it
 
-A third-party SDK that polls `readyState === 4` will never start there, and you may not be able to edit it. `forceReadyState` makes the property answer:
+`forceReadyState` is **on by default**, so a `<video>` playing a mocked stream reports `HAVE_ENOUGH_DATA` once WebKitGTK has parked it at `HAVE_FUTURE_DATA`. Third-party code that polls `readyState === 4` — an SDK you cannot edit — therefore starts as it would on any other engine.
+
+It is deliberately narrow, and cannot fire anywhere the browser is behaving:
+
+- only streams this library produced are spoken for, so other media on the page is untouched;
+- only `HAVE_FUTURE_DATA` is promoted. Every lower value passes through, so nothing claims readiness before the browser has the frames;
+- engines that reach 4 on their own — Chromium anywhere, WebKit on macOS — never reach this code at all;
+- `unmock()` restores the native property.
+
+Turn it off to see the browser's own value, which is worth doing if readiness handling is itself what you are testing:
 
 ```typescript
-MediaMock.mock(devices["iPhone 12"], { forceReadyState: true });
+MediaMock.mock(devices["iPhone 12"], { forceReadyState: false });
 ```
 
-It is deliberately narrow: it speaks only for streams this library produced, and only once the browser has already reached `HAVE_FUTURE_DATA` — the point at which frames are flowing. Every lower value passes through untouched, so nothing claims readiness before there is data, and other media on the page is unaffected. `unmock()` puts the native property back.
-
-Prefer fixing the wait where you can; this exists for when you cannot.
+None of this makes `readyState === 4` a good thing to wait on in code that also runs against real cameras — prefer the events above there.
 
 ### Debugging
 

@@ -49,13 +49,38 @@ describe("readyState of a video playing a mocked stream", () => {
     }
   });
 
-  it("should leave the native readyState alone by default", () => {
+  it("should report a complete readyState by default", async () => {
+    // WebKitGTK is the only engine that needs it, and the patch cannot fire
+    // anywhere else, so it is on unless asked otherwise.
     mock.mock(devices["iPhone 12"]);
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    const video = attach(stream);
+    videos.push(video);
+
+    await playing(video);
+
+    expect(video.readyState).toBe(HAVE_ENOUGH_DATA);
+  });
+
+  it("should leave the native readyState alone when asked to", () => {
+    mock.mock(devices["iPhone 12"], { forceReadyState: false });
 
     expect(
       Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "readyState")
         ?.get,
     ).toBe(nativeReadyState);
+  });
+
+  it("should report the browser's own readyState when asked to", async () => {
+    // Someone testing readiness handling itself needs the real value back.
+    mock.mock(devices["iPhone 12"], { forceReadyState: false });
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    const video = attach(stream);
+    videos.push(video);
+
+    await playing(video);
+
+    expect(video.readyState).toBe(nativeReadyState.call(video));
   });
 
   it("should report a complete readyState for a mocked stream", async () => {

@@ -70,16 +70,22 @@ export interface MockOptions {
    * Whether a `<video>` playing a mocked stream should report
    * `HAVE_ENOUGH_DATA` once the browser has reached `HAVE_FUTURE_DATA`.
    *
-   * WebKit on Linux never advances a MediaStream-backed element past
-   * `HAVE_FUTURE_DATA` (3), even while frames arrive normally, so a consumer
-   * that polls `readyState === 4` never starts. Waiting on the `playing` event
-   * is the portable fix; set this when the waiting code cannot be changed.
+   * WebKitGTK — WebKit on Linux, which is the build Playwright ships and CI
+   * containers run — never advances a MediaStream-backed element past
+   * `HAVE_FUTURE_DATA` (3), even while frames arrive normally. WebKit on macOS
+   * and on real machines does reach 4, as does Chromium everywhere, so this is
+   * a limitation of that one port. A consumer polling `readyState === 4` never
+   * starts there.
    *
-   * Only streams this library produced are spoken for, and only from
-   * `HAVE_FUTURE_DATA` upwards — nothing ever claims readiness before the
-   * browser has the frames.
+   * On by default, because it cannot fire anywhere the browser is behaving:
+   * only streams this library produced are spoken for, and only from
+   * `HAVE_FUTURE_DATA` upwards, which is the point at which frames are already
+   * flowing. Every engine that reports 4 on its own reaches this code never.
    *
-   * @default false
+   * Set `false` to see the browser's own value — worth doing if the readiness
+   * handling is itself what you are testing.
+   *
+   * @default true
    */
   forceReadyState?: boolean;
 
@@ -117,7 +123,7 @@ function resolveMockOptions(options?: MockOptions): ResolvedMockOptions {
     },
     frames: options?.frames ?? true,
     audio: options?.audio ?? true,
-    forceReadyState: options?.forceReadyState ?? false,
+    forceReadyState: options?.forceReadyState ?? true,
   };
 }
 
