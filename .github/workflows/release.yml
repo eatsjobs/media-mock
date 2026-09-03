@@ -89,15 +89,29 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       
-      - name: Publish on JSR 
+      # Only when the step above actually published. When there are changesets
+      # waiting it opens the release PR instead — but it still runs
+      # `changeset version` in the working tree to build that PR, leaving
+      # package.json holding a version that was never released. Publishing that
+      # to JSR is how JSR came to sit two versions ahead of npm.
+      - name: Publish on JSR
         id: jsr-publish
+        if: steps.changesets.outputs.published == 'true'
         run: |
-          # Extract the version from package.json
+          # Safe to read now: a publish leaves package.json at the released version.
           VERSION=$(jq -r '.version' package.json)
-          
-          # Update jsr.json with the extracted version
+          PACKAGE=$(jq -r '.name' jsr.json)
+
+          # Idempotent, so a re-run cannot fail on a version JSR already holds.
+          if curl -sf "https://jsr.io/$PACKAGE/meta.json" \
+            | jq -e --arg v "$VERSION" '.versions | has($v)' > /dev/null; then
+            echo "$PACKAGE@$VERSION is already on JSR; nothing to publish."
+            exit 0
+          fi
+
           jq --arg version "$VERSION" '.version = $version' jsr.json > tmp.json && mv tmp.json jsr.json
 
+          # jsr publish refuses a dirty tree; this commit stays on the runner.
           git add jsr.json
           git commit -m "chore: update jsr.json version to $VERSION" || echo "No changes to commit"
           pnpm dlx jsr publish
