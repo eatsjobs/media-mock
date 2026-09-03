@@ -612,7 +612,8 @@ export class MediaMockClass {
    *
    * @public
    * @param {DeviceConfig} device
-   * @param {MockOptions} [options=createDefaultMockOptions()]
+   * @param {MockOptions} [options] - which `navigator.mediaDevices` methods to
+   * replace, and whether to produce frames and audio. Every member is optional.
    * @returns {typeof MediaMock}
    */
   public mock(device: DeviceConfig, options?: MockOptions): typeof MediaMock {

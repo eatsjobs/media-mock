@@ -16,6 +16,8 @@ With `frames: false` the returned video track carries the emulated camera's labe
 
 `MockOptions.mediaDevices` and its members are now optional, so `mock(device, { frames: false })` no longer has to restate the defaults.
 
+Node grew a global `navigator` only in v21, and this package supports older ones, so `mock()` supplies that too where it is missing — otherwise plain-Node usage below v21 would silently fall back to doing nothing. Anything invented is removed again on `unmock()`.
+
 Whether the environment can paint at all is now checked before any media is loaded. jsdom's `<img>` never fires `load` or `error` for a data URI, so a frames request there used to hang for the full media timeout before failing somewhere less obvious; it now fails immediately, naming `frames: false`.
 
 Three fixes fall out of this, and apply in real browsers too:

@@ -662,21 +662,25 @@ interface EnhancedMediaTrackCapabilities extends MediaTrackCapabilities {
 
 ### `MockOptions`
 
-Defines which `navigator.mediaDevices` methods should be mocked:
+Which `navigator.mediaDevices` methods to replace, and what `getUserMedia` should produce. Every member is optional; omit the object entirely to get all of the defaults.
 
 ```typescript
 interface MockOptions {
-  mediaDevices: {
-    getUserMedia: boolean;
-    getSupportedConstraints: boolean;
-    enumerateDevices: boolean;
+  mediaDevices?: {
+    getUserMedia?: boolean;
+    getSupportedConstraints?: boolean;
+    enumerateDevices?: boolean;
   };
+  frames?: boolean;
+  audio?: boolean;
 }
 ```
 
-- **mediaDevices.getUserMedia**: `boolean` - Enables `navigator.mediaDevices.getUserMedia`.
-- **mediaDevices.getSupportedConstraints**: `boolean` - Enables `navigator.mediaDevices.getSupportedConstraints`.
-- **mediaDevices.enumerateDevices**: `boolean` - Enables `navigator.mediaDevices.enumerateDevices`.
+- **mediaDevices.getUserMedia**: `boolean` (default `true`) - Enables `navigator.mediaDevices.getUserMedia`.
+- **mediaDevices.getSupportedConstraints**: `boolean` (default `true`) - Enables `navigator.mediaDevices.getSupportedConstraints`.
+- **mediaDevices.enumerateDevices**: `boolean` (default `true`) - Enables `navigator.mediaDevices.enumerateDevices`.
+- **frames**: `boolean` (default `true`) - Whether to paint real video frames. Needs a canvas with a 2D context and `captureStream()`, so set `false` in a DOM emulator. See [Unit testing without a browser](#unit-testing-without-a-browser).
+- **audio**: `boolean` (default `true`) - Whether to produce an audio track. Needs Web Audio; with `false`, a request for audio is refused with `NotFoundError`.
 
 ### `Settings`
 
@@ -750,7 +754,7 @@ track.getSettings().deviceId;   // the selected camera's id
 track.getCapabilities().torch;  // true
 ```
 
-`navigator.mediaDevices` does not exist in these environments, so `mock()` installs one and `unmock()` removes it again. The track is live and fully described but carries no pixels; put a `<video>` in front of it and nothing will paint.
+`navigator.mediaDevices` does not exist in these environments, so `mock()` installs one and `unmock()` removes it again — including the `navigator` object itself on Node below v21, which has none. The stream and its tracks satisfy `instanceof MediaStream` / `instanceof MediaStreamTrack` wherever the environment defines those interfaces. The track is live and fully described but carries no pixels; put a `<video>` in front of it and nothing will paint.
 
 **What works:** `enumerateDevices`, `getSupportedConstraints`, `getCapabilities`, device selection by `deviceId`/`facingMode`, constraint refusal (`OverconstrainedError`, `NotFoundError`, `TypeError`), error simulation, redaction while permission is denied, and `devicechange` events.
 

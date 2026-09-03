@@ -8,148 +8,142 @@
  * reading a track cannot tell the difference — right up until it asks for
  * pixels, which no emulator can provide anyway.
  *
- * The prototype of the real interface is adopted where one exists, so
- * `instanceof MediaStream` still holds.
+ * Each object is built on the real interface's prototype where the environment
+ * has one, so `instanceof MediaStream` holds. That is done per object rather
+ * than by mutating a shared class prototype: the environment's globals are not
+ * ours to rewrite, and one shared mutation would chain every later object to
+ * whichever interface happened to exist at the first call. Everything an object
+ * needs is its own property, so nothing inherited can shadow it.
  *
  * No canvas, no codecs: usable wherever `EventTarget` exists.
  */
 
-/** A track that reports itself as live but carries no media. */
-class SyntheticMediaStreamTrack extends EventTarget {
-  readonly kind: string;
-  id: string;
-  label = "";
-  enabled = true;
-  readonly muted = false;
-  readyState: "live" | "ended" = "live";
-  contentHint = "";
-
-  private readonly settings: MediaTrackSettings;
-
-  constructor(kind: "video" | "audio") {
-    super();
-    this.kind = kind;
-    this.id = `media-mock-${kind}-${Math.random().toString(36).slice(2, 10)}`;
-    this.settings = {};
-  }
-
-  getSettings(): MediaTrackSettings {
-    return { ...this.settings };
-  }
-
-  getCapabilities(): MediaTrackCapabilities {
-    return {};
-  }
-
-  getConstraints(): MediaTrackConstraints {
-    return {};
-  }
-
-  applyConstraints(): Promise<void> {
-    return Promise.resolve();
-  }
-
-  clone(): SyntheticMediaStreamTrack {
-    return this;
-  }
-
-  stop(): void {
-    if (this.readyState === "ended") {
-      return;
-    }
-    this.readyState = "ended";
-    this.dispatchEvent(new Event("ended"));
-  }
-}
-
-/** A stream that actually holds the tracks it is given. */
-class SyntheticMediaStream extends EventTarget {
-  readonly id = `media-mock-stream-${Math.random().toString(36).slice(2, 10)}`;
-
-  private readonly tracks: MediaStreamTrack[];
-
-  constructor(tracks: MediaStreamTrack[]) {
-    super();
-    this.tracks = [...tracks];
-  }
-
-  get active(): boolean {
-    return this.tracks.some((track) => track.readyState === "live");
-  }
-
-  getTracks(): MediaStreamTrack[] {
-    return [...this.tracks];
-  }
-
-  getVideoTracks(): MediaStreamTrack[] {
-    return this.tracks.filter((track) => track.kind === "video");
-  }
-
-  getAudioTracks(): MediaStreamTrack[] {
-    return this.tracks.filter((track) => track.kind === "audio");
-  }
-
-  getTrackById(id: string): MediaStreamTrack | null {
-    return this.tracks.find((track) => track.id === id) ?? null;
-  }
-
-  addTrack(track: MediaStreamTrack): void {
-    if (!this.tracks.includes(track)) {
-      this.tracks.push(track);
-    }
-  }
-
-  removeTrack(track: MediaStreamTrack): void {
-    const index = this.tracks.indexOf(track);
-    if (index !== -1) {
-      this.tracks.splice(index, 1);
-    }
-  }
-
-  clone(): SyntheticMediaStream {
-    return new SyntheticMediaStream(this.tracks);
-  }
-}
-
-/**
- * Adopts the real interface's prototype where the environment has one, so
- * `instanceof` still answers correctly. The emulator's prototypes carry no
- * working methods, so nothing of ours is shadowed.
- */
-function adoptPrototype(value: object, globalName: string): void {
+/** The prototype of a global interface, when the environment defines one. */
+function nativePrototype(globalName: string): object | null {
   const nativeInterface = (globalThis as unknown as Record<string, unknown>)[
     globalName
   ];
 
   if (typeof nativeInterface !== "function") {
-    return;
+    return null;
   }
-  const prototype = (nativeInterface as { prototype?: object }).prototype;
-  if (!prototype) {
-    return;
-  }
+  return (nativeInterface as { prototype?: object }).prototype ?? null;
+}
 
-  // Keep our own methods reachable by inserting the real prototype beneath ours.
-  const own = Object.getPrototypeOf(value);
-  if (Object.getPrototypeOf(own) === Object.prototype) {
-    Object.setPrototypeOf(own, prototype);
-  }
+/** An object inheriting from `globalName`'s prototype where one exists. */
+function inheritingFrom(globalName: string): Record<string, unknown> {
+  return Object.create(nativePrototype(globalName) ?? Object.prototype);
 }
 
 /**
- * A live video track that carries the emulated camera's identity but no frames.
+ * Installs `members` as own properties.
+ *
+ * Not `Object.assign`: an adopted prototype may declare a member as a
+ * getter with no setter — happy-dom's `MediaStreamTrack.prototype` does
+ * exactly that for `kind` — and plain assignment through it throws.
+ */
+function defineOwn(
+  target: Record<string, unknown>,
+  members: Record<string, unknown>,
+): void {
+  for (const [key, value] of Object.entries(members)) {
+    Object.defineProperty(target, key, {
+      value,
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    });
+  }
+}
+
+function randomId(prefix: string): string {
+  return `media-mock-${prefix}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/**
+ * A live video track carrying no media.
+ *
+ * Identity, settings and capabilities are filled in afterwards by
+ * `decorateVideoTrack`, exactly as they are for a real capture track.
  */
 export function createSyntheticVideoTrack(): MediaStreamTrack {
-  const track = new SyntheticMediaStreamTrack("video");
-  adoptPrototype(track, "MediaStreamTrack");
+  const events = new EventTarget();
+  const track = inheritingFrom("MediaStreamTrack");
+
+  const stop = (): void => {
+    if (track.readyState === "ended") {
+      return;
+    }
+    track.readyState = "ended";
+    events.dispatchEvent(new Event("ended"));
+  };
+
+  defineOwn(track, {
+    kind: "video",
+    id: randomId("video"),
+    label: "",
+    enabled: true,
+    muted: false,
+    readyState: "live",
+    contentHint: "",
+    getSettings: (): MediaTrackSettings => ({}),
+    getCapabilities: (): MediaTrackCapabilities => ({}),
+    getConstraints: (): MediaTrackConstraints => ({}),
+    applyConstraints: (): Promise<void> => Promise.resolve(),
+    // A frameless track has no media to fork, so a clone is the same track:
+    // stopping either ends both.
+    clone: (): unknown => track,
+    stop,
+    addEventListener: events.addEventListener.bind(events),
+    removeEventListener: events.removeEventListener.bind(events),
+    dispatchEvent: events.dispatchEvent.bind(events),
+  });
+
   return track as unknown as MediaStreamTrack;
 }
 
 /**
- * A stream holding `tracks`, for environments whose own `MediaStream` cannot.
+ * A stream that actually holds the tracks it is given, for environments whose
+ * own `MediaStream` does not.
  */
-export function createSyntheticStream(tracks: MediaStreamTrack[]): MediaStream {
-  const stream = new SyntheticMediaStream(tracks);
-  adoptPrototype(stream, "MediaStream");
+export function createSyntheticStream(
+  tracks: readonly MediaStreamTrack[],
+): MediaStream {
+  const events = new EventTarget();
+  const held = [...tracks];
+  const stream = inheritingFrom("MediaStream");
+
+  defineOwn(stream, {
+    id: randomId("stream"),
+    getTracks: (): MediaStreamTrack[] => [...held],
+    getVideoTracks: (): MediaStreamTrack[] =>
+      held.filter((track) => track.kind === "video"),
+    getAudioTracks: (): MediaStreamTrack[] =>
+      held.filter((track) => track.kind === "audio"),
+    getTrackById: (id: string): MediaStreamTrack | null =>
+      held.find((track) => track.id === id) ?? null,
+    addTrack: (track: MediaStreamTrack): void => {
+      if (!held.includes(track)) {
+        held.push(track);
+      }
+    },
+    removeTrack: (track: MediaStreamTrack): void => {
+      const index = held.indexOf(track);
+      if (index !== -1) {
+        held.splice(index, 1);
+      }
+    },
+    clone: (): MediaStream => createSyntheticStream(held),
+    addEventListener: events.addEventListener.bind(events),
+    removeEventListener: events.removeEventListener.bind(events),
+    dispatchEvent: events.dispatchEvent.bind(events),
+  });
+
+  Object.defineProperty(stream, "active", {
+    get: () => held.some((track) => track.readyState === "live"),
+    enumerable: true,
+    configurable: true,
+  });
+
   return stream as unknown as MediaStream;
 }

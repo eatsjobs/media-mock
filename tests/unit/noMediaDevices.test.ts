@@ -30,6 +30,38 @@ describe("node, with no DOM at all", () => {
     expect(typeof navigator.mediaDevices.getUserMedia).toBe("function");
   });
 
+  it("should work where the runtime has no global navigator", () => {
+    // Node only grew a global `navigator` in v21; the package declares
+    // engines.node >= 16, and CI runs 22 and 24, so this range is untested.
+    const nativeNavigator = globalThis.navigator;
+    // @ts-expect-error - simulating Node 16-20
+    delete globalThis.navigator;
+
+    try {
+      mock.mock(devices["iPhone 12"], frameless);
+
+      expect(typeof navigator.mediaDevices.getUserMedia).toBe("function");
+    } finally {
+      mock.unmock();
+      globalThis.navigator = nativeNavigator;
+    }
+  });
+
+  it("should leave no navigator behind where it invented one", () => {
+    const nativeNavigator = globalThis.navigator;
+    // @ts-expect-error - simulating Node 16-20
+    delete globalThis.navigator;
+
+    try {
+      mock.mock(devices["iPhone 12"], frameless);
+      mock.unmock();
+
+      expect(globalThis.navigator).toBeUndefined();
+    } finally {
+      globalThis.navigator = nativeNavigator;
+    }
+  });
+
   it("should remove it again on unmock", () => {
     mock.mock(devices["iPhone 12"], frameless);
 

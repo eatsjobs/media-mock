@@ -25,13 +25,21 @@ export type PatchableMethod =
  * @returns an undo, or undefined where even that is impossible.
  */
 function synthesizeMediaDevices(): VoidFunction | undefined {
-  if (typeof EventTarget === "undefined" || typeof navigator === "undefined") {
+  if (typeof EventTarget === "undefined") {
     return undefined;
   }
 
-  class SyntheticMediaDevices extends EventTarget {}
   const globals = globalThis as unknown as Record<string, unknown>;
+
+  class SyntheticMediaDevices extends EventTarget {}
   globals.MediaDevices = SyntheticMediaDevices;
+
+  // Node grew a global `navigator` only in v21, and this package supports
+  // older ones — so there may be nothing to hang `mediaDevices` off yet.
+  const inventedNavigator = typeof navigator === "undefined";
+  if (inventedNavigator) {
+    globals.navigator = {};
+  }
 
   const previous = Object.getOwnPropertyDescriptor(navigator, "mediaDevices");
   Object.defineProperty(navigator, "mediaDevices", {
@@ -42,6 +50,12 @@ function synthesizeMediaDevices(): VoidFunction | undefined {
 
   return () => {
     delete globals.MediaDevices;
+
+    // A navigator we invented goes entirely; one we found keeps whatever it had.
+    if (inventedNavigator) {
+      delete globals.navigator;
+      return;
+    }
     if (previous) {
       Object.defineProperty(navigator, "mediaDevices", previous);
     } else {
@@ -65,8 +79,7 @@ export class MediaDevicesPatcher {
    */
   static isSupported(): boolean {
     return (
-      typeof MediaDevices !== "undefined" ||
-      (typeof EventTarget !== "undefined" && typeof navigator !== "undefined")
+      typeof MediaDevices !== "undefined" || typeof EventTarget !== "undefined"
     );
   }
 

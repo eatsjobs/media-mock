@@ -127,6 +127,22 @@ describe("a DOM emulator with no media stack", () => {
     expect(track.readyState).toBe("live");
   });
 
+  it("should satisfy instanceof where the environment defines the interfaces", async () => {
+    // happy-dom defines both as unusable shells; jsdom defines neither. Where
+    // one exists, consumer code narrowing with instanceof has to keep working.
+    mock.mock(devices["iPhone 12"], frameless);
+
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+
+    if (typeof MediaStream === "function") {
+      expect(stream).toBeInstanceOf(MediaStream);
+    }
+    if (typeof MediaStreamTrack === "function") {
+      expect(stream.getVideoTracks()[0]).toBeInstanceOf(MediaStreamTrack);
+    }
+    expect(stream.getVideoTracks()).toHaveLength(1);
+  });
+
   it("should build no canvas in frameless mode", async () => {
     mock.mock(devices["iPhone 12"], frameless);
 
