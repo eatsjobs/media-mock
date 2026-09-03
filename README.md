@@ -673,6 +673,7 @@ interface MockOptions {
   };
   frames?: boolean;
   audio?: boolean;
+  forceReadyState?: boolean;
 }
 ```
 
@@ -681,6 +682,7 @@ interface MockOptions {
 - **mediaDevices.enumerateDevices**: `boolean` (default `true`) - Enables `navigator.mediaDevices.enumerateDevices`.
 - **frames**: `boolean` (default `true`) - Whether to paint real video frames. Needs a canvas with a 2D context and `captureStream()`, so set `false` in a DOM emulator. See [Unit testing without a browser](#unit-testing-without-a-browser).
 - **audio**: `boolean` (default `true`) - Whether to produce an audio track. Needs Web Audio; with `false`, a request for audio is refused with `NotFoundError`.
+- **forceReadyState**: `boolean` (default `false`) - Report `HAVE_ENOUGH_DATA` for a `<video>` playing a mocked stream that the browser has parked at `HAVE_FUTURE_DATA`. See [When the waiting code cannot be changed](#when-the-waiting-code-cannot-be-changed).
 
 ### `Settings`
 
@@ -796,6 +798,18 @@ await new Promise((resolve) => video.requestVideoFrameCallback(resolve));
 ```
 
 `canplay`, `canplaythrough`, `loadeddata` and `playing` all fire on both engines. Only `readyState === 4` is unreliable.
+
+#### When the waiting code cannot be changed
+
+A third-party SDK that polls `readyState === 4` will never start there, and you may not be able to edit it. `forceReadyState` makes the property answer:
+
+```typescript
+MediaMock.mock(devices["iPhone 12"], { forceReadyState: true });
+```
+
+It is deliberately narrow: it speaks only for streams this library produced, and only once the browser has already reached `HAVE_FUTURE_DATA` — the point at which frames are flowing. Every lower value passes through untouched, so nothing claims readiness before there is data, and other media on the page is unaffected. `unmock()` puts the native property back.
+
+Prefer fixing the wait where you can; this exists for when you cannot.
 
 ### Debugging
 

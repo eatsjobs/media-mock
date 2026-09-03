@@ -35,6 +35,7 @@ import {
 import { DrawingLoop, TimerMode } from "./drawingLoop";
 import { Microphone } from "./microphone";
 import { MediaDevicesPatcher } from "./patchMediaDevices";
+import { ReadyStateReporter } from "./readyState";
 import { type Resolution, resolveResolution } from "./resolution";
 import { CanvasSource } from "./sources/CanvasSource";
 import { createSourceFromURL } from "./sources/createSource";
@@ -66,6 +67,23 @@ export interface MockOptions {
   frames?: boolean;
 
   /**
+   * Whether a `<video>` playing a mocked stream should report
+   * `HAVE_ENOUGH_DATA` once the browser has reached `HAVE_FUTURE_DATA`.
+   *
+   * WebKit on Linux never advances a MediaStream-backed element past
+   * `HAVE_FUTURE_DATA` (3), even while frames arrive normally, so a consumer
+   * that polls `readyState === 4` never starts. Waiting on the `playing` event
+   * is the portable fix; set this when the waiting code cannot be changed.
+   *
+   * Only streams this library produced are spoken for, and only from
+   * `HAVE_FUTURE_DATA` upwards — nothing ever claims readiness before the
+   * browser has the frames.
+   *
+   * @default false
+   */
+  forceReadyState?: boolean;
+
+  /**
    * Whether `getUserMedia` should produce an audio track.
    *
    * Needs Web Audio, which a DOM emulator does not have. With `false`, a
@@ -86,6 +104,7 @@ interface ResolvedMockOptions {
   };
   frames: boolean;
   audio: boolean;
+  forceReadyState: boolean;
 }
 
 function resolveMockOptions(options?: MockOptions): ResolvedMockOptions {
@@ -98,6 +117,7 @@ function resolveMockOptions(options?: MockOptions): ResolvedMockOptions {
     },
     frames: options?.frames ?? true,
     audio: options?.audio ?? true,
+    forceReadyState: options?.forceReadyState ?? false,
   };
 }
 
@@ -320,6 +340,11 @@ export class MediaMockClass {
   private readonly patcher = new MediaDevicesPatcher();
 
   private readonly microphone = new Microphone();
+
+  private readonly readyState = new ReadyStateReporter();
+
+  /** Streams this instance handed out, so the readyState patch speaks only for them. */
+  private readonly ownStreams = new WeakSet<MediaStream>();
 
   /** Whether this mock may paint frames and open a microphone. */
   private produceFrames = true;
@@ -621,6 +646,10 @@ export class MediaMockClass {
     this.produceFrames = resolved.frames;
     this.produceAudio = resolved.audio;
 
+    if (resolved.forceReadyState) {
+      this.readyState.install((stream) => this.ownStreams.has(stream));
+    }
+
     // Clone the config so addMockDevice/removeMockDevice never mutate the
     // caller's object (the exported presets are shared across tests).
     this.state.device = cloneDeviceConfig(device);
@@ -669,6 +698,7 @@ export class MediaMockClass {
     this.disableDebugMode();
     this.mockedVideoTracksHandler = (tracks) => tracks;
     this.simulatedGetUserMediaError = null;
+    this.readyState.uninstall();
     this.patcher.restoreAll();
 
     return this;
@@ -873,6 +903,7 @@ export class MediaMockClass {
     this.currentStream = this.produceFrames
       ? new MediaStream(tracks)
       : createSyntheticStream(tracks);
+    this.ownStreams.add(this.currentStream);
 
     return this.currentStream;
   }
