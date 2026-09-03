@@ -762,9 +762,9 @@ track.getCapabilities().torch;  // true
 | Real frames | no | no | no |
 | Audio tracks | no | no | no |
 
-`jsdom` is workable for the device half, but its `<img>` never fires `load` for a data URI and it has no `captureStream`, so nothing beyond that will work there. `happy-dom` is the better fit.
+happy-dom and jsdom are equally usable for the device half — the library's own emulator suite runs green on both. Neither can paint, and they fail differently if you try (happy-dom returns a null canvas context; jsdom's `<img>` never settles at all), so leaving `frames` at its default in either raises an error naming the option before any media is loaded, rather than hanging until the media timeout.
 
-Leaving `frames` at its default in an environment that cannot paint raises an error naming the option, rather than failing obscurely deeper in the canvas.
+Adding `canvas` or a canvas mock to jsdom does not change this: node-canvas has no `captureStream`, and jsdom's `<img>` still will not load a data URI. Frames need a real browser.
 
 ## Testing with Playwright
 

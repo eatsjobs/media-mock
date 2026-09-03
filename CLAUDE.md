@@ -75,12 +75,13 @@ pnpm check-types
 
 ## Testing Architecture
 
-- **Framework**: Vitest, split into two projects in `vitest.config.ts` (test-only config; the library build lives in `tsdown.config.ts`)
+- **Framework**: Vitest, split into four projects in `vitest.config.ts` (test-only config; the library build lives in `tsdown.config.ts`)
 - **`unit` project**: node environment, `tests/unit/**`. For pure modules with no DOM dependency (`lib/constraints.ts`, `lib/resolution.ts`). Runs in ~100ms.
+- **`emulator-happy-dom` / `emulator-jsdom` projects**: `tests/emulator/**`, run under both DOM emulators. For the device-emulation half — enumeration, capabilities, constraint refusal, error simulation — which needs no canvas and no codecs. These environments cannot paint frames, so tests here mock with `{ frames: false, audio: false }`. Run both: they fail in different places.
 - **`browser` project**: Playwright, `tests/*.test.ts`. Chromium in CI; Chromium + WebKit locally. For anything touching `navigator.mediaDevices`, canvas or the DOM.
 - **Coverage**: Uses Istanbul coverage provider with multiple reporters (text, lcov, json)
 
-Run one project with `pnpm vitest --run --project unit` (or `--project browser`).
+Run one project with `pnpm vitest --run --project unit` (or `--project browser`, `--project emulator-jsdom`, ...).
 
 Put logic in a pure module with node tests when it doesn't need a browser — orientation, sizes and constraints should be passed in as arguments rather than read from `window` inside the algorithm.
 

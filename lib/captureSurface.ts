@@ -52,8 +52,8 @@ export class CaptureSurface {
       // rasteriser, so no frames can ever be painted. Name the way out.
       throw new Error(
         "Failed to get 2D canvas context. This environment cannot paint frames " +
-          "— call mock(device, { frames: false }) to stream a track that carries " +
-          "the camera's identity without pixels.",
+          "— call mock(device, { frames: false }) to stream a track that " +
+          "carries the camera's identity without pixels.",
       );
     }
     ctx.fillStyle = "#ffffff";

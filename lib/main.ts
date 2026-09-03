@@ -172,6 +172,32 @@ function isPortraitViewport(): boolean {
 }
 
 /**
+ * Whether this environment can actually paint and capture a canvas.
+ *
+ * Checked before any media is loaded: a DOM emulator will happily hand out a
+ * canvas element and then return null for its context, and jsdom's `<img>`
+ * never settles, so without this a frames request hangs for the whole media
+ * timeout before failing somewhere less obvious.
+ */
+function canPaintFrames(): boolean {
+  if (typeof document === "undefined") {
+    return false;
+  }
+
+  const probe = document.createElement("canvas");
+  return (
+    typeof probe.getContext === "function" &&
+    probe.getContext("2d") != null &&
+    typeof probe.captureStream === "function"
+  );
+}
+
+/** The advice attached to every "this environment cannot paint" failure. */
+const FRAMELESS_HINT =
+  "This environment cannot paint frames — call mock(device, { frames: false }) " +
+  "to stream a track that carries the camera's identity without pixels.";
+
+/**
  * Every track on a stream. `getTracks()` is absent on happy-dom's MediaStream
  * (issue #11), so fall back to the per-kind accessors.
  */
@@ -812,6 +838,12 @@ export class MediaMockClass {
       throw createGetUserMediaError("OverconstrainedError", {
         constraint: unsatisfiable,
       });
+    }
+
+    // Before any media is loaded, so an environment that can never paint fails
+    // immediately rather than after the media timeout.
+    if (wantsVideo && this.produceFrames && !canPaintFrames()) {
+      throw new Error(`Cannot capture video frames. ${FRAMELESS_HINT}`);
     }
 
     const tracks: MediaStreamTrack[] = [];
