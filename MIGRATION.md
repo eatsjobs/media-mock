@@ -1,5 +1,35 @@
 # Migration guide
 
+## 2.0 → 2.1
+
+No API changed shape, but three requests that used to succeed now fail — in each case because the mock was succeeding where real hardware fails, so a test relying on the old behaviour was never exercising its own failure path.
+
+| Request | 2.0 | 2.1 |
+| --- | --- | --- |
+| `getUserMedia({})`, `getUserMedia({ video: false })` | resolved with a video stream | rejects with `TypeError` |
+| `deviceId: { exact: "unknown" }` | fell back to `facingMode` | rejects with `OverconstrainedError` |
+| `width`/`height`/`frameRate` `exact` outside the device's capabilities | snapped to the nearest supported resolution | rejects with `OverconstrainedError` |
+
+If a test asked for a stream it did not actually need, request one kind explicitly:
+
+```diff
+-await navigator.mediaDevices.getUserMedia({});
++await navigator.mediaDevices.getUserMedia({ video: true });
+```
+
+If it pinned a camera by an id that may not exist, make the hint advisory:
+
+```diff
+-video: { deviceId: { exact: someId }, facingMode: "user" }
++video: { deviceId: { ideal: someId }, facingMode: "user" }
+```
+
+`ideal` and bare values are unchanged: they stay advisory and never reject.
+
+Microphones are new rather than changed — every preset now lists an `audioinput`, so `enumerateDevices()` returns more entries than it did, and code asserting an exact device count needs updating. See [Audio](./README.md#audio).
+
+---
+
 ## 1.x → 2.0
 
 Two breaking changes. Both are mechanical, and a typical upgrade is a find-and-replace plus one edit per settings write.

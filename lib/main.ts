@@ -1,8 +1,12 @@
 import { CaptureSurface } from "./captureSurface";
+import { findUnsatisfiableConstraint } from "./constraintCheck";
 import {
+  extractAudioDeviceId,
   extractDeviceId,
   extractFacingMode,
   extractFrameRate,
+  isAudioRequested,
+  isVideoRequested,
 } from "./constraints";
 import {
   createGetUserMediaError,
@@ -16,9 +20,11 @@ import {
   showCanvasForDebug,
   showForDebug,
 } from "./debugView";
+import { deepCopy, deepFreeze } from "./deepCopy";
 import {
   cloneDeviceConfig,
   listDevices,
+  selectAudioDevice,
   selectVideoDevice,
 } from "./deviceRegistry";
 import {
@@ -27,12 +33,13 @@ import {
   type SupportedConstraints,
 } from "./devices";
 import { DrawingLoop, TimerMode } from "./drawingLoop";
+import { Microphone } from "./microphone";
 import { MediaDevicesPatcher } from "./patchMediaDevices";
 import { type Resolution, resolveResolution } from "./resolution";
 import { CanvasSource } from "./sources/CanvasSource";
 import { createSourceFromURL } from "./sources/createSource";
 import type { FrameSource } from "./sources/FrameSource";
-import { decorateVideoTrack } from "./track";
+import { decorateAudioTrack, decorateVideoTrack } from "./track";
 
 export interface MockOptions {
   mediaDevices: {
@@ -161,13 +168,15 @@ export class MediaMockClass {
   };
 
   /**
-   * The current configuration, as a read-only snapshot. Frozen: assigning to it
-   * throws. Use {@link configure} (or the individual setters) to change it.
+   * The current configuration, as a read-only snapshot. Frozen all the way
+   * down: assigning at any depth throws, and the nested values are copies, so
+   * the snapshot is never a way into the mock's own state. Use
+   * {@link configure} (or the individual setters) to change it.
    *
    * @public
    */
   public get settings(): Readonly<Settings> {
-    return Object.freeze({ ...this.state });
+    return deepFreeze(deepCopy(this.state));
   }
 
   /**
@@ -220,6 +229,8 @@ export class MediaMockClass {
   private readonly loop = new DrawingLoop();
 
   private readonly patcher = new MediaDevicesPatcher();
+
+  private readonly microphone = new Microphone();
 
   private currentStream: (MediaStream & { stop?: VoidFunction }) | undefined;
 
@@ -438,6 +449,11 @@ export class MediaMockClass {
   }
 
   private triggerDeviceChange(): void {
+    // The device list is updated either way; in an environment with no
+    // MediaDevices (node) the notification simply has nowhere to go.
+    if (typeof navigator === "undefined" || !navigator.mediaDevices) {
+      return;
+    }
     navigator.mediaDevices.dispatchEvent(new Event("devicechange"));
   }
 
@@ -531,10 +547,11 @@ export class MediaMockClass {
     }
 
     if (options?.mediaDevices.getSupportedConstraints) {
-      this.patcher.patch(
-        "getSupportedConstraints",
-        () => this.state.constraints,
-      );
+      // A copy per call, as real browsers build: returning the live object
+      // would let a caller who edits the result corrupt the mock's own state.
+      this.patcher.patch("getSupportedConstraints", () => ({
+        ...this.state.constraints,
+      }));
     }
 
     if (options?.mediaDevices.enumerateDevices) {
@@ -566,11 +583,15 @@ export class MediaMockClass {
     // Stop the drawing loop (cancels RAF or clears interval)
     this.loop.stop();
 
-    this.currentStream?.getVideoTracks()?.forEach((track) => {
+    // Every track, not only video: an audio-only stream has no video tracks and
+    // would otherwise stay live after unmock().
+    this.currentStream?.getTracks()?.forEach((track) => {
       track.stop();
     });
     this.currentStream?.stop?.(); // Stop the stream if needed
     this.currentStream = undefined;
+
+    this.microphone.close();
 
     this.source?.dispose?.();
     this.source = undefined;
@@ -676,6 +697,81 @@ export class MediaMockClass {
       );
     }
 
+    const wantsVideo = isVideoRequested(constraints);
+    const wantsAudio = isAudioRequested(constraints);
+
+    // Browsers reject an empty request outright, before any device work.
+    if (!wantsVideo && !wantsAudio) {
+      throw new TypeError(
+        "Failed to execute 'getUserMedia' on 'MediaDevices': At least one of audio and video must be requested",
+      );
+    }
+
+    // An explicit deviceId wins, then facingMode, then the first videoinput.
+    const videoDevice = selectVideoDevice(this.state.device, {
+      deviceId: extractDeviceId(constraints),
+      facingMode: extractFacingMode(constraints),
+    });
+    const audioDevice = selectAudioDevice(this.state.device, {
+      deviceId: extractAudioDeviceId(constraints),
+    });
+
+    // getUserMedia is all-or-nothing: a request naming a kind the device does
+    // not have fails outright rather than returning the other kind.
+    // A runtime with no Web Audio cannot produce an audio track at all, which
+    // is indistinguishable from having no microphone: refuse up front rather
+    // than build the video half and hand back a partial stream.
+    if (wantsAudio && (!audioDevice || !Microphone.isSupported())) {
+      throw createGetUserMediaError("NotFoundError");
+    }
+    if (wantsVideo && !videoDevice) {
+      throw createGetUserMediaError("NotFoundError");
+    }
+
+    // Refuse before building anything, so a rejected request leaves no canvas
+    // and no half-started drawing loop behind.
+    const unsatisfiable = findUnsatisfiableConstraint({
+      constraints,
+      videoDevice,
+      audioDevice,
+      supportedConstraints: this.state.constraints,
+    });
+    if (unsatisfiable) {
+      throw createGetUserMediaError("OverconstrainedError", {
+        constraint: unsatisfiable,
+      });
+    }
+
+    const tracks: MediaStreamTrack[] = [];
+
+    if (wantsVideo) {
+      tracks.push(...(await this.captureVideoTracks(constraints, videoDevice)));
+    }
+
+    if (wantsAudio) {
+      const audioTrack = this.microphone.open();
+      if (!audioTrack) {
+        // Guarded above, so this is unreachable — but silently dropping the
+        // track here is the one thing the all-or-nothing contract forbids.
+        throw createGetUserMediaError("NotFoundError");
+      }
+      decorateAudioTrack(audioTrack, { device: audioDevice });
+      tracks.push(audioTrack);
+    }
+
+    this.currentStream = new MediaStream(tracks);
+
+    return this.currentStream;
+  }
+
+  /**
+   * Paints the current source onto a capture canvas and returns the resulting
+   * video tracks, decorated to look like the selected camera.
+   */
+  private async captureVideoTracks(
+    constraints: MediaStreamConstraints,
+    videoDevice: MockMediaDeviceInfo | undefined,
+  ): Promise<MediaStreamTrack[]> {
     this.fps = extractFrameRate(constraints);
 
     // A setSource() still in flight decides what to stream. Without this wait,
@@ -731,12 +827,6 @@ export class MediaMockClass {
 
     const videoTracks = canvasStream?.getVideoTracks() ?? [];
 
-    // An explicit deviceId wins, then facingMode, then the first videoinput.
-    const videoDevice = selectVideoDevice(this.state.device, {
-      deviceId: extractDeviceId(constraints),
-      facingMode: extractFacingMode(constraints),
-    });
-
     for (const track of videoTracks) {
       decorateVideoTrack(track, {
         device: videoDevice,
@@ -746,11 +836,7 @@ export class MediaMockClass {
       });
     }
 
-    this.currentStream = new MediaStream(
-      this.mockedVideoTracksHandler(videoTracks),
-    );
-
-    return this.currentStream;
+    return this.mockedVideoTracksHandler(videoTracks);
   }
 }
 

@@ -33,7 +33,14 @@ export async function loadImage(
     // 2. Decode the image: ensures pixel data is fully decoded before use.
     //    decode() can be called after load; the browser may have already
     //    started decoding during the fetch.
-    await Promise.race([image.decode(), timeout]);
+    //
+    //    A rejection here is not fatal. Some engines refuse an image that
+    //    loaded and draws perfectly well — WebKit on Linux rejects with
+    //    EncodingError for a 1x1 image, which is the shape of the default
+    //    placeholder source — so failing the load would make the mock unusable
+    //    there for no reason. The warmup draw below is the guarantee that
+    //    matters, and it throws if the pixels really are unusable.
+    await Promise.race([image.decode().catch(() => undefined), timeout]);
 
     // 3. Force pixel data into CPU-accessible memory. On some webkit versions,
     //    decode() resolves before the pixel data is ready for canvas drawImage —

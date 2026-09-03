@@ -94,6 +94,40 @@ describe("2.0 API surface", () => {
       expect(MediaMock.settings.canvasScaleFactor).toBe(1);
     });
 
+    it("should refuse writes to a nested value at runtime", () => {
+      MediaMock.mock(devices["Mac Desktop"]);
+
+      expect(() => {
+        (MediaMock.settings.constraints as { width?: boolean }).width = false;
+      }).toThrow(TypeError);
+
+      expect(MediaMock.settings.constraints.width).toBe(true);
+    });
+
+    it("should refuse a device added through the snapshot's device list", () => {
+      MediaMock.mock(devices["Mac Desktop"]);
+      const before = MediaMock.settings.device.mediaDeviceInfo.length;
+
+      expect(() => {
+        MediaMock.settings.device.mediaDeviceInfo.push(
+          devices["iPhone 12"].mediaDeviceInfo[0],
+        );
+      }).toThrow(TypeError);
+
+      expect(MediaMock.settings.device.mediaDeviceInfo).toHaveLength(before);
+    });
+
+    it("should keep the device entries callable through the snapshot", () => {
+      // The snapshot copies the device list, so the methods a MockMediaDeviceInfo
+      // carries have to survive that copy.
+      MediaMock.mock(devices["iPhone 12"]);
+
+      const [frontCamera] = MediaMock.settings.device.mediaDeviceInfo;
+
+      expect(frontCamera.getCapabilities().facingMode).toEqual(["user"]);
+      expect(frontCamera.toJSON()).toMatchObject({ label: "Front Camera" });
+    });
+
     it("should reflect changes made through configure", () => {
       const before = MediaMock.settings.mediaTimeout;
       MediaMock.configure({ mediaTimeout: before + 1 });

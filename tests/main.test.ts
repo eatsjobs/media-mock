@@ -730,22 +730,24 @@ describe("MediaMock", () => {
 
   // ===== ADDITIONAL CONSTRAINT TESTS =====
 
-  it("should handle getUserMedia without video constraint", async () => {
+  it("should reject getUserMedia without any media constraint", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
     await MediaMock.setSource(imageUrl);
 
-    const stream = await navigator.mediaDevices.getUserMedia({});
-    expect(stream).toBeDefined();
+    await expect(
+      navigator.mediaDevices.getUserMedia({}),
+    ).rejects.toBeInstanceOf(TypeError);
   });
 
-  it("should handle getUserMedia with false video constraint", async () => {
+  it("should reject getUserMedia with a false video constraint and no audio", async () => {
     const device = getDeviceForBrowser();
     MediaMock.mock(device);
     await MediaMock.setSource(imageUrl);
 
-    const stream = await navigator.mediaDevices.getUserMedia({ video: false });
-    expect(stream).toBeDefined();
+    await expect(
+      navigator.mediaDevices.getUserMedia({ video: false }),
+    ).rejects.toBeInstanceOf(TypeError);
   });
 
   // ===== ASPECT RATIO CONSTRAINT TESTS =====
@@ -1400,20 +1402,37 @@ describe("MediaMock", () => {
       expect(videoTrack.getSettings().deviceId).toBe(target.deviceId);
     });
 
-    it("should fall back to facingMode when the requested deviceId is unknown", async () => {
+    it("should refuse an exact deviceId no camera has, rather than substituting one", async () => {
+      // `exact` is mandatory: a real browser rejects instead of picking another
+      // camera, even when facingMode would name a usable one.
+      const device = getDeviceForBrowser();
+      MediaMock.mock(device);
+      await MediaMock.setSource(imageUrl);
+
+      await expect(
+        navigator.mediaDevices.getUserMedia({
+          video: {
+            deviceId: { exact: "definitely-not-a-real-device-id" },
+            facingMode: "user",
+          },
+        }),
+      ).rejects.toMatchObject({ name: "OverconstrainedError" });
+    });
+
+    it("should fall back to facingMode when an ideal deviceId is unknown", async () => {
+      // `ideal` is advisory, so an unknown id is a hint the browser may ignore.
       const device = getDeviceForBrowser();
       MediaMock.mock(device);
       await MediaMock.setSource(imageUrl);
 
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
-          deviceId: { exact: "definitely-not-a-real-device-id" },
+          deviceId: { ideal: "definitely-not-a-real-device-id" },
           facingMode: "user",
         },
       });
       const videoTrack = stream.getVideoTracks()[0];
 
-      // Should resolve to the last user-facing camera (existing facingMode behavior)
       const frontCameras = device.mediaDeviceInfo.filter(
         (deviceInfo) =>
           deviceInfo.kind === "videoinput" &&

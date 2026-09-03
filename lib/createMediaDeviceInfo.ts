@@ -1,3 +1,5 @@
+import { deepCopy } from "./deepCopy";
+
 export interface EnhancedMediaTrackCapabilities extends MediaTrackCapabilities {
   whiteBalanceMode?: string[];
   focusDistance?: { min: number };
@@ -74,8 +76,10 @@ export function createMediaDeviceInfo({
     groupId,
     kind,
     label,
+    // A copy per call: the exported presets are module-level singletons, so
+    // handing out the live object lets one consumer's edit reach every other.
     getCapabilities: (): EnhancedMediaTrackCapabilities => {
-      return mockCapabilities;
+      return deepCopy(mockCapabilities);
     },
     toJSON() {
       return {

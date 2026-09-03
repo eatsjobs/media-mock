@@ -1,5 +1,6 @@
 import {
   createMediaDeviceInfo,
+  type EnhancedMediaTrackCapabilities,
   type MockMediaDeviceInfo,
 } from "./createMediaDeviceInfo";
 
@@ -41,6 +42,22 @@ const defaultSupportedConstraintsDesktop: SupportedConstraints = {
   ...defaultSupportedConstraints,
   torch: false,
 };
+/**
+ * What a built-in microphone reports. Every emulated device shares these: the
+ * numbers barely differ between real handsets, unlike camera capabilities.
+ *
+ * `deviceId` and `groupId` are filled in from the device entry when a track is
+ * decorated, so they are deliberately absent here.
+ */
+const audioInputCapabilities: EnhancedMediaTrackCapabilities = {
+  autoGainControl: [true, false],
+  channelCount: { max: 2, min: 1 },
+  echoCancellation: [true, false],
+  noiseSuppression: [true, false],
+  sampleRate: { max: 48000, min: 44100 },
+  sampleSize: { max: 16, min: 16 },
+};
+
 export interface DeviceConfig {
   videoResolutions: { width: number; height: number }[];
   mediaDeviceInfo: MockMediaDeviceInfo[];
@@ -140,6 +157,13 @@ export const devices: Record<DeviceName, DeviceConfig> = {
           zoom: { max: 4, min: 1 },
         },
       }),
+      createMediaDeviceInfo({
+        deviceId: "2B0BDF0A9F4F4B0C9EC0B1D8A0F5E6C7D8E9F0A1",
+        groupId: "3C1CE01BAF5F5C1DAFD1C2E9B1F6F7D8E9F0A1B2",
+        kind: "audioinput",
+        label: "iPhone Microphone",
+        mockCapabilities: audioInputCapabilities,
+      }),
     ],
     supportedConstraints: defaultSupportedConstraints,
   },
@@ -211,6 +235,22 @@ export const devices: Record<DeviceName, DeviceConfig> = {
           torch: true,
         },
       }),
+      createMediaDeviceInfo({
+        deviceId: "default",
+        groupId:
+          "5f5cb9d4b4c2d3e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8e7",
+        kind: "audioinput",
+        label: "Default - Microphone (Built-in)",
+        mockCapabilities: audioInputCapabilities,
+      }),
+      createMediaDeviceInfo({
+        deviceId: "default",
+        groupId:
+          "5f5cb9d4b4c2d3e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8e7",
+        kind: "audiooutput",
+        label: "Default - Speaker",
+        mockCapabilities: {},
+      }),
     ],
     supportedConstraints: defaultSupportedConstraints,
   },
@@ -235,6 +275,20 @@ export const devices: Record<DeviceName, DeviceConfig> = {
           height: { max: 1920, min: 1 },
           width: { max: 1920, min: 1 },
         },
+      }),
+      createMediaDeviceInfo({
+        deviceId: "default",
+        groupId: "A1B2C3D4E5F60718293A4B5C6D7E8F90A1B2C3D4",
+        kind: "audioinput",
+        label: "MacBook Pro Microphone (Built-in)",
+        mockCapabilities: audioInputCapabilities,
+      }),
+      createMediaDeviceInfo({
+        deviceId: "default",
+        groupId: "A1B2C3D4E5F60718293A4B5C6D7E8F90A1B2C3D4",
+        kind: "audiooutput",
+        label: "MacBook Pro Speakers (Built-in)",
+        mockCapabilities: {},
       }),
     ],
     supportedConstraints: defaultSupportedConstraintsDesktop,

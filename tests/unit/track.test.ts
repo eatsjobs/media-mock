@@ -82,6 +82,15 @@ describe("decorateVideoTrack", () => {
     expect(track.getSettings().deviceId).toBe("back-1");
   });
 
+  it("should report the device's groupId in its settings", () => {
+    // Real camera tracks report the group their device belongs to, which is how
+    // a consumer pairs a camera with the microphone in the same enclosure.
+    const track = stubTrack({ deviceId: "random-uuid" });
+    decorateVideoTrack(track, decoration);
+
+    expect(track.getSettings().groupId).toBe("group-back");
+  });
+
   it("should expose the device's facingMode", () => {
     const track = stubTrack();
     decorateVideoTrack(track, decoration);
@@ -100,7 +109,13 @@ describe("decorateVideoTrack", () => {
     const track = stubTrack();
     decorateVideoTrack(track, decoration);
 
-    expect(track.getCapabilities()).toEqual(backCamera.getCapabilities());
+    expect(track.getCapabilities()).toEqual({
+      facingMode: ["environment"],
+      width: { min: 1, max: 4032 },
+      torch: true,
+      deviceId: "back-1",
+      groupId: "group-back",
+    });
   });
 
   it("should derive capabilities from the device resolutions with no device", () => {
@@ -116,11 +131,84 @@ describe("decorateVideoTrack", () => {
     });
   });
 
-  it("should keep a getCapabilities the track already provides", () => {
-    const own = () => ({ width: { min: 2, max: 3 } });
-    const track = stubTrack({}, { getCapabilities: own });
+  it("should report the device's capabilities over the capture track's own", () => {
+    // Chromium and WebKit both give a canvas-capture track a getCapabilities()
+    // describing the canvas, so a mock that defers to it never reports the
+    // emulated camera's torch, zoom or facingMode at all.
+    const canvasCapabilities = () => ({
+      width: { min: 1, max: 720 },
+      facingMode: [],
+    });
+    const track = stubTrack({}, { getCapabilities: canvasCapabilities });
     decorateVideoTrack(track, decoration);
 
-    expect(track.getCapabilities()).toEqual({ width: { min: 2, max: 3 } });
+    const capabilities = track.getCapabilities();
+    expect(capabilities.facingMode).toEqual(["environment"]);
+    expect(capabilities.width).toEqual({ min: 1, max: 4032 });
+  });
+
+  it("should report the selected device's ids in its capabilities", () => {
+    // MediaTrackCapabilities.deviceId is defined as the track's deviceId
+    // setting, so the two must never disagree.
+    const track = stubTrack({}, { getCapabilities: () => ({}) });
+    decorateVideoTrack(track, decoration);
+
+    expect(track.getCapabilities().deviceId).toBe("back-1");
+    expect(track.getCapabilities().groupId).toBe("group-back");
+  });
+
+  it("should override a deviceId the device's own capabilities disagree with", () => {
+    // The shipped presets were dumped from real hardware at different times, so
+    // several declare a capabilities deviceId that no longer matches the entry.
+    const driftedCamera = createMediaDeviceInfo({
+      deviceId: "front-1",
+      groupId: "group-front",
+      kind: "videoinput",
+      label: "Front Camera",
+      mockCapabilities: { deviceId: "stale-id", groupId: "stale-group" },
+    });
+    const track = stubTrack();
+    decorateVideoTrack(track, { ...decoration, device: driftedCamera });
+
+    expect(track.getCapabilities().deviceId).toBe("front-1");
+    expect(track.getCapabilities().groupId).toBe("group-front");
+  });
+
+  it("should copy capabilities where structuredClone is unavailable", () => {
+    // structuredClone arrived in Node 17 and in browsers only in early 2022;
+    // the package still declares node >= 16.
+    const nativeStructuredClone = globalThis.structuredClone;
+    // @ts-expect-error - simulating a runtime that predates it
+    delete globalThis.structuredClone;
+
+    try {
+      const track = stubTrack();
+      decorateVideoTrack(track, decoration);
+
+      expect(track.getCapabilities().facingMode).toEqual(["environment"]);
+    } finally {
+      globalThis.structuredClone = nativeStructuredClone;
+    }
+  });
+
+  it("should not let a caller mutate a nested capability range", () => {
+    // The presets are module-level singletons shared by every test in the
+    // process, so a leaked reference into one corrupts all later runs.
+    const track = stubTrack();
+    decorateVideoTrack(track, decoration);
+
+    (track.getCapabilities().width as { max: number }).max = 99;
+
+    expect(track.getCapabilities().width).toEqual({ min: 1, max: 4032 });
+    expect(backCamera.getCapabilities().width).toEqual({ min: 1, max: 4032 });
+  });
+
+  it("should not let a caller mutate the capabilities it hands out", () => {
+    const track = stubTrack();
+    decorateVideoTrack(track, decoration);
+
+    (track.getCapabilities() as { torch?: boolean }).torch = false;
+
+    expect((track.getCapabilities() as { torch?: boolean }).torch).toBe(true);
   });
 });

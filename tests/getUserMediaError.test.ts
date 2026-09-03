@@ -95,8 +95,12 @@ describe("getUserMedia error simulation", () => {
       expect(device.label).toBe("");
       expect(device.deviceId).toBe("");
       expect(device.groupId).toBe("");
-      expect(device.kind).toBe("videoinput");
     }
+    // `kind` survives redaction — that is what tells a caller a camera exists
+    // at all before permission is granted.
+    expect(enumerated.map((device) => device.kind)).toEqual(
+      devices["iPhone 12"].mediaDeviceInfo.map((device) => device.kind),
+    );
   });
 
   it("should not redact enumerateDevices for non-permission errors", async () => {

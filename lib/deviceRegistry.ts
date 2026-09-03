@@ -73,6 +73,32 @@ export function selectVideoDevice(
 }
 
 /**
+ * The microphone a `getUserMedia` call should report as its source.
+ *
+ * An explicit `deviceId` wins, as in real browsers; otherwise the first
+ * audioinput, which is the one browsers list as the default.
+ */
+export function selectAudioDevice(
+  config: DeviceConfig,
+  { deviceId }: { deviceId?: string | null },
+): MockMediaDeviceInfo | undefined {
+  const audioDevices = config.mediaDeviceInfo.filter(
+    (device) => device.kind === "audioinput",
+  );
+
+  if (deviceId) {
+    const requested = audioDevices.find(
+      (device) => device.deviceId === deviceId,
+    );
+    if (requested) {
+      return requested;
+    }
+  }
+
+  return audioDevices[0];
+}
+
+/**
  * The list `enumerateDevices()` should resolve with.
  *
  * When redacted, entries keep their `kind` but lose `label`, `deviceId` and

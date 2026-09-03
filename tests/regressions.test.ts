@@ -2,7 +2,9 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
   createMediaDeviceInfo,
   devices,
+  type EnhancedMediaTrackCapabilities,
   MediaMock,
+  type MockMediaDeviceInfo,
   TimerMode,
 } from "../lib/main";
 
@@ -38,6 +40,66 @@ describe("MediaMock regressions", () => {
 
     expect(constraints).toStrictEqual(
       devices["Mac Desktop"].supportedConstraints,
+    );
+  });
+
+  it("should present the patched methods with the native signature", () => {
+    // Code that sniffs navigator.mediaDevices — feature detection, wrappers
+    // that forward arguments by arity — reads these.
+    const nativeName = MediaDevices.prototype.getUserMedia.name;
+    const nativeLength = MediaDevices.prototype.getUserMedia.length;
+
+    MediaMock.mock(devices["iPhone 12"]);
+
+    expect(MediaDevices.prototype.getUserMedia.name).toBe(nativeName);
+    expect(MediaDevices.prototype.getUserMedia.length).toBe(nativeLength);
+  });
+
+  it("should hand out a fresh supportedConstraints object on every call", () => {
+    // Real browsers build a new dictionary per call. Returning the live
+    // internal one lets a caller who edits the result corrupt the mock.
+    MediaMock.mock(devices["Mac Desktop"]);
+
+    const constraints = navigator.mediaDevices.getSupportedConstraints();
+    constraints.width = false;
+
+    expect(navigator.mediaDevices.getSupportedConstraints().width).toBe(true);
+    expect(MediaMock.settings.constraints.width).toBe(true);
+  });
+
+  it("should not let a caller mutate the capabilities of an enumerated device", async () => {
+    // The device presets are module-level singletons shared by every consumer,
+    // so getCapabilities() must not hand out the live object.
+    MediaMock.mock(devices["iPhone 12"]);
+    const [frontCamera] =
+      (await navigator.mediaDevices.enumerateDevices()) as unknown as MockMediaDeviceInfo[];
+
+    (frontCamera.getCapabilities().zoom as { max: number }).max = 99;
+
+    expect(frontCamera.getCapabilities().zoom).toEqual({ max: 4, min: 1 });
+    expect(
+      devices["iPhone 12"].mediaDeviceInfo[0].getCapabilities().zoom,
+    ).toEqual({ max: 4, min: 1 });
+  });
+
+  it("should report the emulated camera's capabilities on a real capture track", async () => {
+    // A canvas-capture track carries its own getCapabilities() in both Chromium
+    // and WebKit, describing the canvas rather than the camera being emulated.
+    MediaMock.mock(devices["iPhone 12"]);
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "environment" },
+    });
+    const track = stream.getVideoTracks()[0];
+
+    const capabilities =
+      track.getCapabilities() as EnhancedMediaTrackCapabilities;
+
+    // The last environment-facing entry of the iPhone 12 preset: "Back Camera".
+    expect(capabilities.facingMode).toEqual(["environment"]);
+    expect(capabilities.torch).toBe(true);
+    expect(capabilities.zoom).toEqual({ max: 4, min: 1 });
+    expect(capabilities.deviceId).toBe(
+      "C92FE814FCB4F2F856CDCBFD1C555429774DD0E2",
     );
   });
 
