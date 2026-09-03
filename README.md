@@ -682,7 +682,7 @@ interface MockOptions {
 - **mediaDevices.enumerateDevices**: `boolean` (default `true`) - Enables `navigator.mediaDevices.enumerateDevices`.
 - **frames**: `boolean` (default `true`) - Whether to paint real video frames. Needs a canvas with a 2D context and `captureStream()`, so set `false` in a DOM emulator. See [Unit testing without a browser](#unit-testing-without-a-browser).
 - **audio**: `boolean` (default `true`) - Whether to produce an audio track. Needs Web Audio; with `false`, a request for audio is refused with `NotFoundError`.
-- **emulateVideoFrameCallback**: `boolean` (default `false`) - Deliver `requestVideoFrameCallback` for a `<video>` playing a mocked stream, for WebKit under a virtual monitor where the browser never does. Fires only on frames that actually arrived. See [emulateVideoFrameCallback](#emulatevideoframecallback).
+- **emulateVideoFrameCallback**: `boolean` (default `false`) - Answer `requestVideoFrameCallback` and `readyState` for a `<video>` playing a mocked stream, which WebKit on Linux never does. Both are driven by frames that actually arrived, and both fall silent on a stalled stream. See [emulateVideoFrameCallback](#emulatevideoframecallback).
 
 ### `Settings`
 
@@ -785,7 +785,7 @@ A `<video>` fed a `MediaStream` stays at `HAVE_FUTURE_DATA` (3) forever under **
 
 It is not specific to this library either: a bare `canvas.captureStream()` behaves the same way there, while a plain video file in the same browser reaches 4.
 
-Wait on an event instead — see [What to wait on instead](#what-to-wait-on-instead).
+`emulateVideoFrameCallback` corrects this along with the callback — see [below](#emulatevideoframecallback). Where you control the waiting code, an event is still the better thing to wait on: see [What to wait on instead](#what-to-wait-on-instead).
 
 Playback is healthy regardless — `currentTime` advances, frames arrive at the requested rate — so wait on an event rather than polling the property:
 
@@ -829,29 +829,35 @@ So the frames are decoded, and they are reachable — `drawImage(video, ...)` re
 
 ### What to wait on instead
 
-The two defects need different answers:
+Both symptoms have one cause — frames are never presented — and both readiness signals are derived from presentation:
 
-- **`readyState` stuck at 3** happens in WebKit on Linux either way. Wait on `playing` or `canplay`, which fire correctly in every case above.
-- **rVFC silent** happens only under a virtual monitor. **Run WebKit headless in CI if you can** — that alone restores it.
+- **rVFC silent** happens only under a virtual monitor. **Running WebKit headless restores it**, and where CI allows that it is the cleanest fix.
+- **`readyState` stuck at 3** happens in WebKit on Linux either way. Headless does *not* fix it; nothing does.
+
+Waiting on `playing` or `canplay` sidesteps both, and those fire correctly in every case above. Where the waiting code is yours, prefer that. Where it is not, `emulateVideoFrameCallback` answers both.
 
 #### `emulateVideoFrameCallback`
 
-Where the virtual monitor has to stay, the mock can deliver the callback itself:
+Makes the mock stand in for both presentation-derived signals, for consumers that cannot be changed:
 
 ```typescript
 MediaMock.mock(devices["iPhone 12"], { emulateVideoFrameCallback: true });
 ```
 
-Measured through the built bundle in the same container, three seconds per row:
+Measured through the built bundle in the same container, five seconds per row:
 
-| WebKit under xvfb | rVFC calls | frames decoded |
-| --- | --- | --- |
-| default (the browser's own) | 0 | 83 |
-| `emulateVideoFrameCallback: true` | 84 | 84 |
+| WebKit on Linux | rVFC calls | `readyState` reached 4 | after frames stop |
+| --- | --- | --- | --- |
+| xvfb, default | 0 | never | 2 |
+| xvfb, with the option | 139 | 501ms | 2 |
+| headless, default | 136 | never | 2 |
+| headless, with the option | 139 | 502ms | 2 |
 
-It reports frames rather than inventing them. A callback fires only once the video's decoded frame count has actually advanced, so on a stalled stream it goes quiet exactly as the real one does — it cannot paper over a stream that has stopped. Videos playing anything other than a mocked stream keep the browser's own implementation, and `unmock()` restores it.
+Both answers come from the same evidence — the video's decoded frame count advancing — so neither speaks before a frame has arrived. The last column is the point: once frames stop, both fall silent again and `readyState` drops back to the browser's own value. **A stalled stream still looks stalled**, which is the one thing a readiness signal must not get wrong.
 
-Off by default: WebKit headless and every Chromium mode deliver the callback themselves, and standing in for a working browser API is not something to do unasked.
+Scoped narrowly: only videos playing a stream this library produced are affected, so other media on the page is untouched, and `unmock()` restores both the callback and the property.
+
+Off by default. Every other engine reports these correctly on its own, and standing in for a working browser is not something to do unasked.
 
 The signals below need no option at all and hold everywhere:
 
