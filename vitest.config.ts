@@ -68,6 +68,18 @@ export default defineConfig({
         },
       },
       {
+        // A DOM emulator with no real media stack. Covers the device-emulation
+        // half of the library — enumeration, capabilities, constraint refusal,
+        // error simulation — which needs no canvas and no codecs.
+        test: {
+          name: "emulator",
+          globals: true,
+          environment: "happy-dom",
+          include: ["tests/emulator/**/*.test.ts"],
+          ...timeouts,
+        },
+      },
+      {
         // Everything that touches navigator.mediaDevices, canvas or the DOM.
         test: {
           name: "browser",

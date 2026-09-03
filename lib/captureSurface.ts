@@ -48,7 +48,13 @@ export class CaptureSurface {
 
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) {
-      throw new Error("Failed to get 2D canvas context");
+      // A DOM emulator (happy-dom, jsdom) returns null here: it has no
+      // rasteriser, so no frames can ever be painted. Name the way out.
+      throw new Error(
+        "Failed to get 2D canvas context. This environment cannot paint frames " +
+          "— call mock(device, { frames: false }) to stream a track that carries " +
+          "the camera's identity without pixels.",
+      );
     }
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, resolution.width, resolution.height);

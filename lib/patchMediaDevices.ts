@@ -15,14 +15,59 @@ export type PatchableMethod =
   | "enumerateDevices";
 
 /**
+ * Installs a stand-in `MediaDevices` where the environment has none.
+ *
+ * A DOM emulator (happy-dom, jsdom) has no media stack at all, so there is no
+ * prototype to patch and `navigator.mediaDevices` is undefined. Supplying both
+ * is what lets the device half of the library — enumeration, capabilities,
+ * constraint refusal, error simulation — work outside a real browser.
+ *
+ * @returns an undo, or undefined where even that is impossible.
+ */
+function synthesizeMediaDevices(): VoidFunction | undefined {
+  if (typeof EventTarget === "undefined" || typeof navigator === "undefined") {
+    return undefined;
+  }
+
+  class SyntheticMediaDevices extends EventTarget {}
+  const globals = globalThis as unknown as Record<string, unknown>;
+  globals.MediaDevices = SyntheticMediaDevices;
+
+  const previous = Object.getOwnPropertyDescriptor(navigator, "mediaDevices");
+  Object.defineProperty(navigator, "mediaDevices", {
+    value: new SyntheticMediaDevices(),
+    configurable: true,
+    writable: true,
+  });
+
+  return () => {
+    delete globals.MediaDevices;
+    if (previous) {
+      Object.defineProperty(navigator, "mediaDevices", previous);
+    } else {
+      Reflect.deleteProperty(navigator as unknown as object, "mediaDevices");
+    }
+  };
+}
+
+/**
  * Holds the native implementations while mocks are installed.
  */
 export class MediaDevicesPatcher {
   private readonly originals = new Map<PatchableMethod, AnyFn>();
 
-  /** Whether the environment exposes `MediaDevices` at all (jsdom/node do not). */
+  /** Undo for a `MediaDevices` this patcher had to invent. */
+  private undoSynthesis: VoidFunction | undefined;
+
+  /**
+   * Whether the mock can be installed here: either the environment has a real
+   * `MediaDevices`, or it has enough for one to be synthesized.
+   */
   static isSupported(): boolean {
-    return typeof MediaDevices !== "undefined";
+    return (
+      typeof MediaDevices !== "undefined" ||
+      (typeof EventTarget !== "undefined" && typeof navigator !== "undefined")
+    );
   }
 
   /** Number of methods currently patched. */
@@ -38,7 +83,10 @@ export class MediaDevicesPatcher {
    * already holds a mock, and saving that would lose the native permanently.
    */
   patch(method: PatchableMethod, mockFn: AnyFn): void {
-    if (!MediaDevicesPatcher.isSupported()) {
+    if (typeof MediaDevices === "undefined") {
+      this.undoSynthesis ??= synthesizeMediaDevices();
+    }
+    if (typeof MediaDevices === "undefined") {
       return;
     }
 
@@ -73,5 +121,9 @@ export class MediaDevicesPatcher {
         original;
     }
     this.originals.clear();
+
+    // A synthesized MediaDevices is ours to remove; a native one is not.
+    this.undoSynthesis?.();
+    this.undoSynthesis = undefined;
   }
 }

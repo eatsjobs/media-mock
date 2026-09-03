@@ -39,6 +39,7 @@ Can also be used as browser extension please have a look at this repo [https://g
   - [MockOptions](#mockoptions)
   - [DeviceConfig](#deviceconfig)
 - [Testing with Playwright](#testing-with-playwright)
+- [Unit testing without a browser](#unit-testing-without-a-browser)
 - [Debugging](#debugging)
 
 ---
@@ -729,6 +730,41 @@ interface MockMediaDeviceInfo extends MediaDeviceInfo {
 ```
 
 ---
+
+## Unit testing without a browser
+
+A DOM emulator has no rasteriser and no codecs, so it can never produce real frames. It can still answer every question about *which devices exist and what they can do* — and that is what most unit tests actually ask. Pass `frames: false` and `audio: false` to get that half:
+
+```typescript
+import { MediaMock, devices } from "@eatsjobs/media-mock";
+
+MediaMock.mock(devices["iPhone 12"], { frames: false, audio: false });
+
+await navigator.mediaDevices.enumerateDevices();      // the emulated device list
+navigator.mediaDevices.getSupportedConstraints();     // the device's constraints
+
+const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+const [track] = stream.getVideoTracks();
+track.label;                    // "Back Camera"
+track.getSettings().deviceId;   // the selected camera's id
+track.getCapabilities().torch;  // true
+```
+
+`navigator.mediaDevices` does not exist in these environments, so `mock()` installs one and `unmock()` removes it again. The track is live and fully described but carries no pixels; put a `<video>` in front of it and nothing will paint.
+
+**What works:** `enumerateDevices`, `getSupportedConstraints`, `getCapabilities`, device selection by `deviceId`/`facingMode`, constraint refusal (`OverconstrainedError`, `NotFoundError`, `TypeError`), error simulation, redaction while permission is denied, and `devicechange` events.
+
+**What does not:** frames of any kind, audio tracks, and anything that loads media from a URL — an emulator has no server to fetch `./assets/frame.png` from. Use `setSource()` only in a real browser.
+
+| | node | happy-dom | jsdom |
+| --- | --- | --- | --- |
+| Device emulation (`frames: false`) | yes | yes | yes |
+| Real frames | no | no | no |
+| Audio tracks | no | no | no |
+
+`jsdom` is workable for the device half, but its `<img>` never fires `load` for a data URI and it has no `captureStream`, so nothing beyond that will work there. `happy-dom` is the better fit.
+
+Leaving `frames` at its default in an environment that cannot paint raises an error naming the option, rather than failing obscurely deeper in the canvas.
 
 ## Testing with Playwright
 

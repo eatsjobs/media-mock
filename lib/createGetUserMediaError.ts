@@ -62,6 +62,15 @@ export function createGetUserMediaError(
   return new DOMException(message, name);
 }
 
+/** Whether a constructed error actually reports itself as the right one. */
+function looksOverconstrained(value: unknown): boolean {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { name?: unknown }).name === "OverconstrainedError"
+  );
+}
+
 /**
  * `OverconstrainedError` is its own interface rather than a DOMException name.
  * Chromium exposes a constructor for it; WebKit and Firefox don't, so there we
@@ -81,7 +90,12 @@ function createOverconstrainedError(
   ).OverconstrainedError;
 
   if (typeof OverconstrainedErrorConstructor === "function") {
-    return new OverconstrainedErrorConstructor(constraint, message);
+    const native = new OverconstrainedErrorConstructor(constraint, message);
+    // happy-dom exposes the name but builds something Event-shaped from it,
+    // with neither `name` nor `constraint`. Only trust it if it answers.
+    if (looksOverconstrained(native)) {
+      return native;
+    }
   }
 
   const error = new DOMException(message, "OverconstrainedError");

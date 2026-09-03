@@ -38,6 +38,9 @@ importers:
       '@vitest/ui':
         specifier: ^4.1.7
         version: 4.1.7(vitest@4.1.7)
+      happy-dom:
+        specifier: ^20.13.1
+        version: 20.13.1
       playwright:
         specifier: ^1.60.0
         version: 1.60.0
@@ -58,7 +61,7 @@ importers:
         version: 8.0.14(@types/node@25.9.1)
       vitest:
         specifier: ^4.1.7
-        version: 4.1.7(@types/node@25.9.1)(@vitest/browser-playwright@4.1.7)(@vitest/coverage-istanbul@4.1.7)(@vitest/ui@4.1.7)(vite@8.0.14(@types/node@25.9.1))
+        version: 4.1.7(@types/node@25.9.1)(@vitest/browser-playwright@4.1.7)(@vitest/coverage-istanbul@4.1.7)(@vitest/ui@4.1.7)(happy-dom@20.13.1)(vite@8.0.14(@types/node@25.9.1))
 
 packages:
 
@@ -599,6 +602,12 @@ packages:
   '@types/webxr@0.5.24':
     resolution: {integrity: sha512-h8fgEd/DpoS9CBrjEQXR+dIDraopAEfu4wYVNY2tEPwk60stPWhvZMf4Foo5FakuQ7HFZoa8WceaWFervK2Ovg==}
 
+  '@types/whatwg-mimetype@3.0.2':
+    resolution: {integrity: sha512-c2AKvDT8ToxLIOUlN51gTiHXflsfIFisS4pO7pDPoKouJCESkhZnEy623gwP9laCy5lnLDAw1vAzu2vM2YLOrA==}
+
+  '@types/ws@8.18.1':
+    resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
+
   '@vitest/browser-playwright@4.1.7':
     resolution: {integrity: sha512-OlTlJej7YN6VwV7zJJoNeaCsctF+JXpzpZ4oBHUbrQFfIq+0KW2f07rprCLh9N/zRIZ0v4Mchn1QDDmWMUhPKw==}
     peerDependencies:
@@ -833,6 +842,10 @@ packages:
     engines: {node: ^6 || ^7 || ^8 || ^9 || ^10 || ^11 || ^12 || >=13.7}
     hasBin: true
 
+  buffer-image-size@0.6.4:
+    resolution: {integrity: sha512-nEh+kZOPY1w+gcCMobZ6ETUp9WfibndnosbpwB1iJk/8Gt5ZF2bhS6+B6bPYz424KtwsR6Rflc3tCz1/ghX2dQ==}
+    engines: {node: '>=4.0'}
+
   cac@7.0.0:
     resolution: {integrity: sha512-tixWYgm5ZoOD+3g6UTea91eow5z6AAHaho3g0V9CNSNb45gM8SmflpAc+GRd1InC4AqN/07Unrgp56Y94N9hJQ==}
     engines: {node: '>=20.19.0'}
@@ -942,6 +955,10 @@ packages:
     resolution: {integrity: sha512-rRqJg/6gd538VHvR3PSrdRBb/1Vy2YfzHqzvbhGIQpDRKIa4FgV/54b5Q1xYSxOOwKvjXweS26E0Q+nAMwp2pQ==}
     engines: {node: '>=8.6'}
 
+  entities@7.0.1:
+    resolution: {integrity: sha512-TWrgLOFUQTH994YUyl1yT4uyavY5nNB5muff+RtWaqNVCAK408b5ZnnbNAUEWLTCpum9w6arT70i1XdQ4UeOPA==}
+    engines: {node: '>=0.12'}
+
   environment@1.1.0:
     resolution: {integrity: sha512-xUtoPkMggbz0MPyPiIWr1Kp4aeWJjDZ6SMvURhimjdZgsRuDplF5/s9hcgGhyXMhs+6vpnuoiZ2kFiu3FMnS8Q==}
     engines: {node: '>=18'}
@@ -1038,6 +1055,10 @@ packages:
 
   graceful-fs@4.2.11:
     resolution: {integrity: sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ==}
+
+  happy-dom@20.13.1:
+    resolution: {integrity: sha512-hoh0Sq+2vSDi8CJaFnLBLAlEK7/vrRmUiim30PwFj9aiVwqF/Z+6cCpmt9gNuQgu+PHjNC4O2PhjxA9Nr+UlBQ==}
+    engines: {node: '>=20.0.0'}
 
   has-flag@4.0.0:
     resolution: {integrity: sha512-EykJT/Q1KjTWctppgIAgfSO0tKVuZUjhgMr17kqTumMl6Afv3EISleU7qZUzoXDFTAHTDC4NOoG/ZxU3EvlMPQ==}
@@ -1736,6 +1757,10 @@ packages:
       jsdom:
         optional: true
 
+  whatwg-mimetype@3.0.0:
+    resolution: {integrity: sha512-nt+N2dzIutVRxARx1nghPKGv1xHikU7HKdfafKkLNLindmPU/ch3U31NOCGGA/dmPcmb1VlofO0vnKAcsm0o/Q==}
+    engines: {node: '>=12'}
+
   which@2.0.2:
     resolution: {integrity: sha512-BLI3Tl1TW3Pvl70l3yq3Y64i+awpwXqsGBYWkkqMtnbXgrMD+yj7rhW0kuEDxzJaYXGjEW5ogapKNMEKNMjibA==}
     engines: {node: '>= 8'}
@@ -2364,13 +2389,19 @@ snapshots:
 
   '@types/webxr@0.5.24': {}
 
+  '@types/whatwg-mimetype@3.0.2': {}
+
+  '@types/ws@8.18.1':
+    dependencies:
+      '@types/node': 25.9.1
+
   '@vitest/browser-playwright@4.1.7(playwright@1.60.0)(vite@8.0.14(@types/node@25.9.1))(vitest@4.1.7)':
     dependencies:
       '@vitest/browser': 4.1.7(vite@8.0.14(@types/node@25.9.1))(vitest@4.1.7)
       '@vitest/mocker': 4.1.7(vite@8.0.14(@types/node@25.9.1))
       playwright: 1.60.0
       tinyrainbow: 3.1.0
-      vitest: 4.1.7(@types/node@25.9.1)(@vitest/browser-playwright@4.1.7)(@vitest/coverage-istanbul@4.1.7)(@vitest/ui@4.1.7)(vite@8.0.14(@types/node@25.9.1))
+      vitest: 4.1.7(@types/node@25.9.1)(@vitest/browser-playwright@4.1.7)(@vitest/coverage-istanbul@4.1.7)(@vitest/ui@4.1.7)(happy-dom@20.13.1)(vite@8.0.14(@types/node@25.9.1))
     transitivePeerDependencies:
       - bufferutil
       - msw
@@ -2386,7 +2417,7 @@ snapshots:
       pngjs: 7.0.0
       sirv: 3.0.2
       tinyrainbow: 3.1.0
-      vitest: 4.1.7(@types/node@25.9.1)(@vitest/browser-playwright@4.1.7)(@vitest/coverage-istanbul@4.1.7)(@vitest/ui@4.1.7)(vite@8.0.14(@types/node@25.9.1))
+      vitest: 4.1.7(@types/node@25.9.1)(@vitest/browser-playwright@4.1.7)(@vitest/coverage-istanbul@4.1.7)(@vitest/ui@4.1.7)(happy-dom@20.13.1)(vite@8.0.14(@types/node@25.9.1))
       ws: 8.21.0
     transitivePeerDependencies:
       - bufferutil
@@ -2406,7 +2437,7 @@ snapshots:
       magicast: 0.5.3
       obug: 2.1.1
       tinyrainbow: 3.1.0
-      vitest: 4.1.7(@types/node@25.9.1)(@vitest/browser-playwright@4.1.7)(@vitest/coverage-istanbul@4.1.7)(@vitest/ui@4.1.7)(vite@8.0.14(@types/node@25.9.1))
+      vitest: 4.1.7(@types/node@25.9.1)(@vitest/browser-playwright@4.1.7)(@vitest/coverage-istanbul@4.1.7)(@vitest/ui@4.1.7)(happy-dom@20.13.1)(vite@8.0.14(@types/node@25.9.1))
     transitivePeerDependencies:
       - supports-color
 
@@ -2454,7 +2485,7 @@ snapshots:
       sirv: 3.0.2
       tinyglobby: 0.2.16
       tinyrainbow: 3.1.0
-      vitest: 4.1.7(@types/node@25.9.1)(@vitest/browser-playwright@4.1.7)(@vitest/coverage-istanbul@4.1.7)(@vitest/ui@4.1.7)(vite@8.0.14(@types/node@25.9.1))
+      vitest: 4.1.7(@types/node@25.9.1)(@vitest/browser-playwright@4.1.7)(@vitest/coverage-istanbul@4.1.7)(@vitest/ui@4.1.7)(happy-dom@20.13.1)(vite@8.0.14(@types/node@25.9.1))
 
   '@vitest/utils@4.1.7':
     dependencies:
@@ -2576,6 +2607,10 @@ snapshots:
       node-releases: 2.0.46
       update-browserslist-db: 1.2.3(browserslist@4.28.2)
 
+  buffer-image-size@0.6.4:
+    dependencies:
+      '@types/node': 25.9.1
+
   cac@7.0.0: {}
 
   caniuse-lite@1.0.30001793: {}
@@ -2660,6 +2695,8 @@ snapshots:
     dependencies:
       ansi-colors: 4.1.3
       strip-ansi: 6.0.1
+
+  entities@7.0.1: {}
 
   environment@1.1.0: {}
 
@@ -2746,6 +2783,19 @@ snapshots:
       slash: 3.0.0
 
   graceful-fs@4.2.11: {}
+
+  happy-dom@20.13.1:
+    dependencies:
+      '@types/node': 25.9.1
+      '@types/whatwg-mimetype': 3.0.2
+      '@types/ws': 8.18.1
+      buffer-image-size: 0.6.4
+      entities: 7.0.1
+      whatwg-mimetype: 3.0.0
+      ws: 8.21.0
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
 
   has-flag@4.0.0: {}
 
@@ -3267,7 +3317,7 @@ snapshots:
       '@types/node': 25.9.1
       fsevents: 2.3.3
 
-  vitest@4.1.7(@types/node@25.9.1)(@vitest/browser-playwright@4.1.7)(@vitest/coverage-istanbul@4.1.7)(@vitest/ui@4.1.7)(vite@8.0.14(@types/node@25.9.1)):
+  vitest@4.1.7(@types/node@25.9.1)(@vitest/browser-playwright@4.1.7)(@vitest/coverage-istanbul@4.1.7)(@vitest/ui@4.1.7)(happy-dom@20.13.1)(vite@8.0.14(@types/node@25.9.1)):
     dependencies:
       '@vitest/expect': 4.1.7
       '@vitest/mocker': 4.1.7(vite@8.0.14(@types/node@25.9.1))
@@ -3294,8 +3344,11 @@ snapshots:
       '@vitest/browser-playwright': 4.1.7(playwright@1.60.0)(vite@8.0.14(@types/node@25.9.1))(vitest@4.1.7)
       '@vitest/coverage-istanbul': 4.1.7(vitest@4.1.7)
       '@vitest/ui': 4.1.7(vitest@4.1.7)
+      happy-dom: 20.13.1
     transitivePeerDependencies:
       - msw
+
+  whatwg-mimetype@3.0.0: {}
 
   which@2.0.2:
     dependencies:
