@@ -682,7 +682,7 @@ interface MockOptions {
 - **mediaDevices.enumerateDevices**: `boolean` (default `true`) - Enables `navigator.mediaDevices.enumerateDevices`.
 - **frames**: `boolean` (default `true`) - Whether to paint real video frames. Needs a canvas with a 2D context and `captureStream()`, so set `false` in a DOM emulator. See [Unit testing without a browser](#unit-testing-without-a-browser).
 - **audio**: `boolean` (default `true`) - Whether to produce an audio track. Needs Web Audio; with `false`, a request for audio is refused with `NotFoundError`.
-- **forceReadyState**: `boolean` (default `true`) - Report `HAVE_ENOUGH_DATA` for a `<video>` playing a mocked stream that the browser has parked at `HAVE_FUTURE_DATA`, which WebKitGTK does permanently. Cannot fire on an engine that reports 4 on its own. See [What the mock does about it](#what-the-mock-does-about-it).
+- **forceReadyState**: `boolean` (default `false`) - Report `HAVE_ENOUGH_DATA` for a `<video>` playing a mocked stream that the browser has parked at `HAVE_FUTURE_DATA`, which WebKit on Linux does permanently. Not a fix for stalled frames. See [forceReadyState](#forcereadystate).
 
 ### `Settings`
 
@@ -785,7 +785,7 @@ A `<video>` fed a `MediaStream` stays at `HAVE_FUTURE_DATA` (3) forever under **
 
 It is not specific to this library either: a bare `canvas.captureStream()` behaves the same way there, while a plain video file in the same browser reaches 4.
 
-**The mock corrects this for you by default** — see [`forceReadyState`](#mockoptions). The paragraphs below still describe the portable approach, which is worth following anyway for code that runs against real cameras.
+`forceReadyState` can paper over it — see below — but the portable approach is to wait on an event instead.
 
 Playback is healthy regardless — `currentTime` advances, frames arrive at the requested rate — so wait on an event rather than polling the property:
 
@@ -803,24 +803,45 @@ await new Promise((resolve) => video.requestVideoFrameCallback(resolve));
 
 `canplay`, `canplaythrough`, `loadeddata` and `playing` all fire on both engines. Only `readyState === 4` is unreliable.
 
-#### What the mock does about it
+### Under xvfb, WebKit never fires `requestVideoFrameCallback`
 
-`forceReadyState` is **on by default**, so a `<video>` playing a mocked stream reports `HAVE_ENOUGH_DATA` once WebKitGTK has parked it at `HAVE_FUTURE_DATA`. Third-party code that polls `readyState === 4` — an SDK you cannot edit — therefore starts as it would on any other engine.
+A second, independent defect, and the one that bites hardest. Measured with Playwright 1.60 in `mcr.microsoft.com/playwright:v1.60.0-noble`, six seconds per cell:
 
-It is deliberately narrow, and cannot fire anywhere the browser is behaving:
+| Engine | Mode | `readyState` | rVFC calls | frames decoded |
+| --- | --- | --- | --- | --- |
+| Chromium | headless | 4 | 170 | 172 |
+| Chromium | xvfb | 4 | 177 | 179 |
+| WebKit | headless | **3** | 163 | 163 |
+| WebKit | **xvfb** | **3** | **0** | 180 |
 
-- only streams this library produced are spoken for, so other media on the page is untouched;
-- only `HAVE_FUTURE_DATA` is promoted. Every lower value passes through, so nothing claims readiness before the browser has the frames;
-- engines that reach 4 on their own — Chromium anywhere, WebKit on macOS — never reach this code at all;
-- `unmock()` restores the native property.
+Under a virtual monitor WebKit *decodes* frames — 180 of them, none dropped, `currentTime` advancing normally — but never **presents** any, and `requestVideoFrameCallback` fires on presentation. So the callback is silent while the stream is perfectly healthy. Chromium is unaffected in both modes.
 
-Turn it off to see the browser's own value, which is worth doing if readiness handling is itself what you are testing:
+The two defects need different answers:
+
+- **`readyState` stuck at 3** happens in WebKit on Linux either way. Wait on `playing` / `canplay`, which fire correctly, or use `forceReadyState` below.
+- **rVFC silent** happens only under xvfb. **Run WebKit headless in CI if you can** — that alone restores it.
+
+If you must keep the virtual monitor, the signal that works everywhere is the decoded frame count:
 
 ```typescript
-MediaMock.mock(devices["iPhone 12"], { forceReadyState: false });
+const before = video.getVideoPlaybackQuality().totalVideoFrames;
+await new Promise((resolve) => setTimeout(resolve, 200));
+const flowing = video.getVideoPlaybackQuality().totalVideoFrames > before;
 ```
 
-None of this makes `readyState === 4` a good thing to wait on in code that also runs against real cameras — prefer the events above there.
+`currentTime` advancing works as well, and both hold in every cell of the table above.
+
+#### `forceReadyState`
+
+Off by default. It makes a `<video>` playing a mocked stream report `HAVE_ENOUGH_DATA` once the browser has reached `HAVE_FUTURE_DATA`, for third-party code that polls `readyState === 4` and cannot be edited:
+
+```typescript
+MediaMock.mock(devices["iPhone 12"], { forceReadyState: true });
+```
+
+It is deliberately narrow — only streams this library produced are spoken for, only `HAVE_FUTURE_DATA` is promoted, engines that reach 4 on their own never reach the code, and `unmock()` restores the native property.
+
+**It is not a fix for stalled frames.** Forcing the property cannot make frames arrive: under xvfb it would report readiness while rVFC stays silent, moving the hang one step later. Turn it on only once you have confirmed frames are flowing with the check above, and prefer fixing the wait itself where you can.
 
 ### Debugging
 

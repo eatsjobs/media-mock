@@ -77,15 +77,17 @@ export interface MockOptions {
    * a limitation of that one port. A consumer polling `readyState === 4` never
    * starts there.
    *
-   * On by default, because it cannot fire anywhere the browser is behaving:
-   * only streams this library produced are spoken for, and only from
-   * `HAVE_FUTURE_DATA` upwards, which is the point at which frames are already
-   * flowing. Every engine that reports 4 on its own reaches this code never.
+   * Off by default. The property is only a symptom: forcing it cannot make
+   * frames arrive, so where they have genuinely stalled this hides the stall
+   * and moves the hang to whatever the consumer waits on next. Turn it on only
+   * once you know frames are flowing — `getVideoPlaybackQuality().totalVideoFrames`
+   * climbing is the check — and the waiting code cannot be changed.
    *
-   * Set `false` to see the browser's own value — worth doing if the readiness
-   * handling is itself what you are testing.
+   * Only streams this library produced are spoken for, and only from
+   * `HAVE_FUTURE_DATA` upwards, so nothing ever claims readiness before the
+   * browser has the frames.
    *
-   * @default true
+   * @default false
    */
   forceReadyState?: boolean;
 
@@ -123,7 +125,7 @@ function resolveMockOptions(options?: MockOptions): ResolvedMockOptions {
     },
     frames: options?.frames ?? true,
     audio: options?.audio ?? true,
-    forceReadyState: options?.forceReadyState ?? true,
+    forceReadyState: options?.forceReadyState ?? false,
   };
 }
 

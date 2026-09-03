@@ -2,19 +2,21 @@
 "@eatsjobs/media-mock": minor
 ---
 
-Report `HAVE_ENOUGH_DATA` on WebKitGTK, where the browser never does.
+Add `forceReadyState` (off by default), and document two separate WebKit-on-Linux defects.
 
-WebKitGTK — WebKit on Linux, which is the build Playwright ships and CI containers run — parks a `<video>` fed a `MediaStream` at `HAVE_FUTURE_DATA` (3) and never advances it, even while `currentTime` runs in real time and frames arrive at the requested rate. WebKit on macOS and on real machines reaches 4, as does Chromium everywhere, so it is a limitation of that one port. Measured against a bare `canvas.captureStream()` with this library not involved at all: same result there, while a plain video file in the same browser reaches 4.
+WebKit on Linux — the build Playwright ships and CI containers run — parks a `<video>` fed a `MediaStream` at `HAVE_FUTURE_DATA` (3) and never advances it, even while frames arrive at the requested rate. A bare `canvas.captureStream()` reproduces it with this library not involved, while a plain video file in the same browser reaches 4, and Chromium reaches 4 everywhere.
 
-Consumers that poll `readyState === 4` before starting — a third-party SDK you cannot edit, typically — therefore never start under CI, while the same code works everywhere else.
+Separately, and only under a virtual monitor, that same engine never fires `requestVideoFrameCallback`. Measured over six seconds per case:
 
-`mock()` now corrects this by default. The patch cannot fire anywhere the browser is behaving:
+| Engine | Mode | `readyState` | rVFC calls | frames decoded |
+| --- | --- | --- | --- | --- |
+| Chromium | headless | 4 | 170 | 172 |
+| Chromium | xvfb | 4 | 177 | 179 |
+| WebKit | headless | 3 | 163 | 163 |
+| WebKit | xvfb | 3 | 0 | 180 |
 
-- only streams this library produced are spoken for, so other media on the page is untouched;
-- only `HAVE_FUTURE_DATA` is promoted, so nothing claims readiness before the browser has the frames;
-- an engine that reports 4 on its own never reaches the code;
-- `unmock()` restores the native property.
+Under xvfb WebKit decodes frames and advances `currentTime` but never presents any, and rVFC fires on presentation. Running WebKit headless restores it; where the virtual monitor has to stay, a climbing `getVideoPlaybackQuality().totalVideoFrames` is the readiness signal that holds in every case above.
 
-Pass `forceReadyState: false` to see the browser's own value, which is worth doing if readiness handling is itself what you are testing.
+`forceReadyState` addresses the first defect only, for third-party code that polls `readyState === 4` and cannot be edited. It speaks only for streams this library produced, promotes only `HAVE_FUTURE_DATA`, never reaches an engine that reports 4 on its own, and `unmock()` restores the native property.
 
-Waiting on `playing`, `canplay` or `requestVideoFrameCallback` remains the portable approach for code that also runs against real cameras, and the README still recommends it.
+It is off by default and should stay off unless frames are known to be flowing: forcing the property cannot make frames arrive, so under xvfb it would report readiness while rVFC stays silent, moving the hang one step later rather than fixing it.
