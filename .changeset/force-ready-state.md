@@ -1,12 +1,12 @@
 ---
-"@eatsjobs/media-mock": minor
+"@eatsjobs/media-mock": patch
 ---
 
-Add `forceReadyState` (off by default), and document two separate WebKit-on-Linux defects.
+Document two separate WebKit-on-Linux defects that make a mocked stream look unready when it is not.
 
 WebKit on Linux — the build Playwright ships and CI containers run — parks a `<video>` fed a `MediaStream` at `HAVE_FUTURE_DATA` (3) and never advances it, even while frames arrive at the requested rate. A bare `canvas.captureStream()` reproduces it with this library not involved, while a plain video file in the same browser reaches 4, and Chromium reaches 4 everywhere.
 
-Separately, and only under a virtual monitor, that same engine never fires `requestVideoFrameCallback`. Measured over six seconds per case:
+Separately, and only under a virtual monitor, that same engine never fires `requestVideoFrameCallback`:
 
 | Engine | Mode | `readyState` | rVFC calls | frames decoded |
 | --- | --- | --- | --- | --- |
@@ -15,8 +15,8 @@ Separately, and only under a virtual monitor, that same engine never fires `requ
 | WebKit | headless | 3 | 163 | 163 |
 | WebKit | xvfb | 3 | 0 | 180 |
 
-Under xvfb WebKit decodes frames and advances `currentTime` but never presents any, and rVFC fires on presentation. Running WebKit headless restores it; where the virtual monitor has to stay, a climbing `getVideoPlaybackQuality().totalVideoFrames` is the readiness signal that holds in every case above.
+It is not a visibility problem: with `document.hidden` false, `visibilityState` visible, `hasFocus()` true and `requestAnimationFrame` ticking normally, rVFC stays at zero whether the canvas and video are visible, `display: none`, offscreen or zero-sized — and `drawImage(video, ...)` returns fresh frames throughout. The frames are decoded and reachable; only the callback is never invoked.
 
-`forceReadyState` addresses the first defect only, for third-party code that polls `readyState === 4` and cannot be edited. It speaks only for streams this library produced, promotes only `HAVE_FUTURE_DATA`, never reaches an engine that reports 4 on its own, and `unmock()` restores the native property.
+Running WebKit headless restores rVFC. Where the virtual monitor has to stay, a climbing `getVideoPlaybackQuality().totalVideoFrames` is the readiness signal that holds in every case above, and `drawImage` gets at the pixels.
 
-It is off by default and should stay off unless frames are known to be flowing: forcing the property cannot make frames arrive, so under xvfb it would report readiness while rVFC stays silent, moving the hang one step later rather than fixing it.
+No API change: an earlier draft of this work added a `forceReadyState` option, which is not included. Forcing the property cannot make frames arrive, so under xvfb it would have reported readiness while rVFC stayed silent — moving the hang one step later rather than fixing it.

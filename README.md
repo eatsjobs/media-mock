@@ -673,7 +673,6 @@ interface MockOptions {
   };
   frames?: boolean;
   audio?: boolean;
-  forceReadyState?: boolean;
 }
 ```
 
@@ -682,7 +681,6 @@ interface MockOptions {
 - **mediaDevices.enumerateDevices**: `boolean` (default `true`) - Enables `navigator.mediaDevices.enumerateDevices`.
 - **frames**: `boolean` (default `true`) - Whether to paint real video frames. Needs a canvas with a 2D context and `captureStream()`, so set `false` in a DOM emulator. See [Unit testing without a browser](#unit-testing-without-a-browser).
 - **audio**: `boolean` (default `true`) - Whether to produce an audio track. Needs Web Audio; with `false`, a request for audio is refused with `NotFoundError`.
-- **forceReadyState**: `boolean` (default `false`) - Report `HAVE_ENOUGH_DATA` for a `<video>` playing a mocked stream that the browser has parked at `HAVE_FUTURE_DATA`, which WebKit on Linux does permanently. Not a fix for stalled frames. See [forceReadyState](#forcereadystate).
 
 ### `Settings`
 
@@ -736,6 +734,120 @@ interface MockMediaDeviceInfo extends MediaDeviceInfo {
 ```
 
 ---
+
+## Unit testing without a browser
+
+A DOM emulator has no rasteriser and no codecs, so it can never produce real frames. It can still answer every question about *which devices exist and what they can do* — and that is what most unit tests actually ask. Pass `frames: false` and `audio: false` to get that half:
+
+```typescript
+import { MediaMock, devices } from "@eatsjobs/media-mock";
+
+MediaMock.mock(devices["iPhone 12"], { frames: false, audio: false });
+
+await navigator.mediaDevices.enumerateDevices();      // the emulated device list
+navigator.mediaDevices.getSupportedConstraints();     // the device's constraints
+
+const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+const [track] = stream.getVideoTracks();
+track.label;                    // "Back Camera"
+track.getSettings().deviceId;   // the selected camera's id
+track.getCapabilities().torch;  // true
+```
+
+`navigator.mediaDevices` does not exist in these environments, so `mock()` installs one and `unmock()` removes it again — including the `navigator` object itself on Node below v21, which has none. The stream and its tracks satisfy `instanceof MediaStream` / `instanceof MediaStreamTrack` wherever the environment defines those interfaces. The track is live and fully described but carries no pixels; put a `<video>` in front of it and nothing will paint.
+
+**What works:** `enumerateDevices`, `getSupportedConstraints`, `getCapabilities`, device selection by `deviceId`/`facingMode`, constraint refusal (`OverconstrainedError`, `NotFoundError`, `TypeError`), error simulation, redaction while permission is denied, and `devicechange` events.
+
+**What does not:** frames of any kind, audio tracks, and anything that loads media from a URL — an emulator has no server to fetch `./assets/frame.png` from. Use `setSource()` only in a real browser.
+
+| | node | happy-dom | jsdom |
+| --- | --- | --- | --- |
+| Device emulation (`frames: false`) | yes | yes | yes |
+| Real frames | no | no | no |
+| Audio tracks | no | no | no |
+
+happy-dom and jsdom are equally usable for the device half — the library's own emulator suite runs green on both. Neither can paint, and they fail differently if you try (happy-dom returns a null canvas context; jsdom's `<img>` never settles at all), so leaving `frames` at its default in either raises an error naming the option before any media is loaded, rather than hanging until the media timeout.
+
+Adding `canvas` or a canvas mock to jsdom does not change this: node-canvas has no `captureStream`, and jsdom's `<img>` still will not load a data URI. Frames need a real browser.
+
+## Testing with Playwright
+
+The mock replaces methods on `MediaDevices.prototype`, so it takes effect from the moment the module runs — but only in the realm it runs in. Two consequences worth knowing:
+
+- **Install it before the page's own scripts.** If your app calls `getUserMedia` during startup, set the mock up in `page.addInitScript()` rather than after `page.goto()`.
+- **It does not reach into iframes.** Each frame is its own realm with its own `MediaDevices.prototype`. A page under test that runs your camera code inside an iframe will see the real (or missing) camera there.
+
+### WebKitGTK never reports `readyState === 4`
+
+A `<video>` fed a `MediaStream` stays at `HAVE_FUTURE_DATA` (3) forever under **WebKitGTK** — WebKit on Linux, which is the build Playwright ships and CI containers run. WebKit on macOS and on real machines reaches 4, as does Chromium everywhere, so this is a limitation of that one port rather than of WebKit generally.
+
+It is not specific to this library either: a bare `canvas.captureStream()` behaves the same way there, while a plain video file in the same browser reaches 4.
+
+Wait on an event instead — see [What to wait on instead](#what-to-wait-on-instead).
+
+Playback is healthy regardless — `currentTime` advances, frames arrive at the requested rate — so wait on an event rather than polling the property:
+
+```typescript
+const video = document.createElement("video");
+video.srcObject = await navigator.mediaDevices.getUserMedia({ video: true });
+await video.play();
+
+// Portable: fires on Chromium and WebKit alike
+await new Promise((resolve) => video.addEventListener("playing", resolve, { once: true }));
+
+// Or wait for an actual frame
+await new Promise((resolve) => video.requestVideoFrameCallback(resolve));
+```
+
+`canplay`, `canplaythrough`, `loadeddata` and `playing` all fire on both engines. Only `readyState === 4` is unreliable.
+
+### Under xvfb, WebKit never fires `requestVideoFrameCallback`
+
+A second, independent defect, and the one that bites hardest. Measured with Playwright 1.60 in `mcr.microsoft.com/playwright:v1.60.0-noble`, six seconds per cell:
+
+| Engine | Mode | `readyState` | rVFC calls | frames decoded |
+| --- | --- | --- | --- | --- |
+| Chromium | headless | 4 | 170 | 172 |
+| Chromium | xvfb | 4 | 177 | 179 |
+| WebKit | headless | **3** | 163 | 163 |
+| WebKit | **xvfb** | **3** | **0** | 180 |
+
+It is not a visibility problem. With the page reporting `document.hidden=false`, `visibilityState=visible` and `hasFocus=true`, and `requestAnimationFrame` ticking 1175 times, rVFC stays at zero for every arrangement:
+
+| Arrangement under xvfb | rVFC | frames decoded | `drawImage` sees |
+| --- | --- | --- | --- |
+| canvas and video both visible, in the viewport | 0 | 89 | changing frames |
+| canvas `display: none` | 0 | 90 | changing frames |
+| canvas positioned offscreen | 0 | 90 | changing frames |
+| video `display: none` | 0 | 91 | changing frames |
+| video below the fold | 0 | 91 | changing frames |
+| video sized `0x0` | 0 | 91 | changing frames |
+
+So the frames are decoded, and they are reachable — `drawImage(video, ...)` returns fresh, alternating content throughout. Only the callback is never invoked. Hiding the canvas (which this library does) is not the cause, and neither is the video's size, position or `display`.
+
+### What to wait on instead
+
+The two defects need different answers:
+
+- **`readyState` stuck at 3** happens in WebKit on Linux either way. Wait on `playing` or `canplay`, which fire correctly in every case above.
+- **rVFC silent** happens only under a virtual monitor. **Run WebKit headless in CI if you can** — that alone restores it.
+
+Where the virtual monitor has to stay, the signals that hold everywhere are the decoded frame count and `currentTime`:
+
+```typescript
+const before = video.getVideoPlaybackQuality().totalVideoFrames;
+await new Promise((resolve) => setTimeout(resolve, 200));
+const flowing = video.getVideoPlaybackQuality().totalVideoFrames > before;
+```
+
+And if you need the pixels rather than just a readiness signal, `drawImage` works under xvfb even though rVFC does not:
+
+```typescript
+const scratch = document.createElement("canvas");
+scratch.width = video.videoWidth;
+scratch.height = video.videoHeight;
+scratch.getContext("2d").drawImage(video, 0, 0);
+```
 
 ## Unit testing without a browser
 
