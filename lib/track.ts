@@ -1,3 +1,5 @@
+import { applyToCapabilities } from "./applyCapabilities";
+import { createGetUserMediaError } from "./createGetUserMediaError";
 import type {
   EnhancedMediaTrackCapabilities,
   MockMediaDeviceInfo,
@@ -32,9 +34,13 @@ export function decorateVideoTrack(
   { device, fps, resolution, deviceResolutions }: TrackDecoration,
 ): void {
   applyIdentity(track, device);
-  applyCapabilities(track, device, () =>
+  const capabilities = applyCapabilities(track, device, () =>
     capabilitiesFromResolutions(deviceResolutions),
   );
+
+  // What applyConstraints() has settled, reported back through getSettings().
+  const applied: MediaTrackSettings = {};
+  honourAdvertisedConstraints(track, capabilities, applied);
 
   extendSettings(track, (settings) => {
     // Real devices always report a frame rate and a frame size.
@@ -56,6 +62,9 @@ export function decorateVideoTrack(
         settings.facingMode = supported[0];
       }
     }
+
+    // Anything applyConstraints() settled wins: it is the most recent word.
+    Object.assign(settings, applied);
   });
 }
 
@@ -112,7 +121,7 @@ function applyCapabilities(
   track: MediaStreamTrack,
   device: MockMediaDeviceInfo | undefined,
   fallback: () => EnhancedMediaTrackCapabilities,
-): void {
+): EnhancedMediaTrackCapabilities {
   const capabilities = device
     ? {
         ...device.getCapabilities(),
@@ -126,6 +135,43 @@ function applyCapabilities(
 
   // A fresh copy per call, so one caller's edit cannot reach the next.
   track.getCapabilities = () => deepCopy(capabilities);
+
+  return capabilities;
+}
+
+/**
+ * Settles constraints naming something the device advertises, and leaves the
+ * rest to the browser.
+ *
+ * Without this the emulated capabilities are a promise the track cannot keep: a
+ * capture track knows nothing of torch or zoom, so asking for one is refused
+ * with `OverconstrainedError: Unsupported constraint` even though
+ * `getCapabilities()` just said it was available.
+ */
+function honourAdvertisedConstraints(
+  track: MediaStreamTrack,
+  capabilities: EnhancedMediaTrackCapabilities,
+  applied: MediaTrackSettings,
+): void {
+  const nativeApply = track.applyConstraints?.bind(track);
+
+  track.applyConstraints = async (
+    constraints: MediaTrackConstraints = {},
+  ): Promise<void> => {
+    const outcome = applyToCapabilities(constraints, capabilities);
+
+    if (outcome.unsatisfiable !== null) {
+      throw createGetUserMediaError("OverconstrainedError", {
+        constraint: outcome.unsatisfiable,
+      });
+    }
+
+    Object.assign(applied, outcome.settings);
+
+    if (outcome.remainder !== null && nativeApply) {
+      await nativeApply(outcome.remainder);
+    }
+  };
 }
 
 /**
