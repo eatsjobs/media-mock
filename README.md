@@ -24,6 +24,8 @@ Can also be used as browser extension please have a look at this repo [https://g
   - [Configuring Media Load Timeout](#configuring-media-load-timeout)
   - [Controlling the Drawing Timer (headless/CI)](#controlling-the-drawing-timer-headlessci)
   - [Streaming Your Own Canvas (3D scenes)](#streaming-your-own-canvas-3d-scenes)
+  - [Audio](#audio)
+  - [Constraints the device cannot meet](#constraints-the-device-cannot-meet)
   - [Simulating Errors](#simulating-errors)
   - [Creating Custom Mock Devices](#creating-custom-mock-devices)
 - [Migrating to 2.0](#migrating-to-20) · [full guide](./MIGRATION.md)
@@ -36,6 +38,7 @@ Can also be used as browser extension please have a look at this repo [https://g
   - [Settings and ConfigurableSettings](#settings)
   - [MockOptions](#mockoptions)
   - [DeviceConfig](#deviceconfig)
+- [Testing with Playwright](#testing-with-playwright)
 - [Debugging](#debugging)
 
 ---
@@ -49,6 +52,8 @@ Can also be used as browser extension please have a look at this repo [https://g
 - **Easy Integration with Testing**: Ideal for testing media applications with tools like Vitest, Jest or Playwright.
 - **Headless-Friendly Timer Modes**: Choose how frames are pushed to the stream (`requestAnimationFrame`, `setInterval`, or automatic) for reliable capture under headless / virtual displays (e.g. `xvfb`).
 - **Custom Mock Devices**: Build your own `MediaDeviceInfo` entries (with capabilities like `torch`, `zoom`, etc.) via `createMediaDeviceInfo`.
+- **Microphones**: Every preset exposes an `audioinput` (and, where the real device has one, an `audiooutput`). `getUserMedia({ audio: true })` returns a live, silent audio track carrying the emulated microphone's identity.
+- **Real Refusals**: Mandatory constraints (`exact`, `min`, `max`) the emulated device cannot meet are rejected with `OverconstrainedError`, naming the offending constraint — as a real camera does — instead of being quietly snapped to something else.
 - **Error Simulation**: Make `getUserMedia` reject with realistic errors (`NotAllowedError`, `NotFoundError`, `OverconstrainedError`, ...) to test permission-denied and no-camera paths.
 - **Bring Your Own Canvas**: Stream a canvas you render into — a WebGL/Three.js 3D scene, or procedural frames via a custom `FrameSource`.
 - **Isolated Instances**: `createMediaMock()` gives each test file its own instance, so configuration and device state cannot leak between them.
@@ -267,6 +272,62 @@ await MediaMock.setSource(noise);
 
 A source provides **either** `drawInto` (MediaMock owns the canvas and drives the timer) **or** `captureCanvas` (MediaMock captures your canvas and runs no timer). Note that a `drawInto` source does not dictate resolution — MediaMock sizes its canvas from the constraints and the emulated device, as it does for an image.
 
+## Audio
+
+Every preset exposes a microphone alongside its cameras, so a request for audio behaves like it would on the real device:
+
+```typescript
+MediaMock.mock(devices["iPhone 12"]);
+
+const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+stream.getVideoTracks();  // [MediaStreamTrack] — the canvas capture
+stream.getAudioTracks();  // [MediaStreamTrack] — a live, silent track
+
+const [microphone] = stream.getAudioTracks();
+microphone.label;                  // "iPhone Microphone"
+microphone.getSettings().deviceId; // the audioinput's deviceId
+microphone.getCapabilities();      // echoCancellation, channelCount, sampleRate, ...
+```
+
+The track is produced by a Web Audio `MediaStreamAudioDestinationNode` with nothing connected to it: it is live and readable, it simply carries silence. That is enough for code that records, meters, or just checks a microphone is present; it will not produce a waveform to analyse.
+
+`getUserMedia({ audio: true })` on its own returns an audio-only stream and builds no capture canvas. Which preset has what:
+
+| Preset | `audioinput` | `audiooutput` |
+| --- | --- | --- |
+| `iPhone 12` | `iPhone Microphone` | *(none — iOS Safari exposes no outputs)* |
+| `Samsung Galaxy M53` | `Default - Microphone (Built-in)` | `Default - Speaker` |
+| `Mac Desktop` | `MacBook Pro Microphone (Built-in)` | `MacBook Pro Speakers (Built-in)` |
+
+Requesting a kind the emulated device does not have fails the whole call with `NotFoundError`, exactly as `getUserMedia` does on real hardware — it is all-or-nothing, never a partial stream.
+
+## Constraints the device cannot meet
+
+`exact`, `min` and `max` are mandatory: a real camera refuses a request it cannot serve rather than substituting something else. The mock does the same, rejecting with an `OverconstrainedError` whose `constraint` names what failed.
+
+```typescript
+MediaMock.mock(devices["iPhone 12"]);
+
+await navigator.mediaDevices.getUserMedia({
+  video: { width: { exact: 99999 } },
+});
+// OverconstrainedError, constraint: "width"
+
+await navigator.mediaDevices.getUserMedia({
+  video: { deviceId: { exact: "not-a-real-camera" } },
+});
+// OverconstrainedError, constraint: "deviceId"
+```
+
+`ideal` and bare values stay advisory — the mock gets as close as it can and never rejects over them:
+
+```typescript
+await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 99999 } } });
+// resolves, snapped to the closest resolution the device supports
+```
+
+Checked against the selected device's `getCapabilities()`: `width`, `height` (in either orientation, since a sensor held sideways produces the transpose), `frameRate`, `aspectRatio`, and for audio `channelCount`, `sampleRate`, `sampleSize`. A capability the device does not declare is not checked. Requesting neither `video` nor `audio` rejects with a `TypeError`, as browsers do.
+
 ## Simulating Errors
 
 Real apps have to handle a user denying camera permission, a machine with no camera, or a camera already in use by another application. `simulateGetUserMediaError` makes `getUserMedia` reject so those paths can be tested:
@@ -457,12 +518,16 @@ MediaMock.configure({
 
 #### `settings: Readonly<Settings>`
 
-The current configuration, as a frozen snapshot. Readable as before; assigning to it throws. Use `configure()` to change it.
+The current configuration, as a frozen snapshot. Readable as before; assigning to it throws. The snapshot is frozen all the way down and its nested values are copies, so it is never a way into the mock's own state — use `configure()`, `addMockDevice()` and `removeMockDevice()` to make changes.
 
 ```typescript
-MediaMock.settings.mediaURL;                     // "./assets/frame.png"
-MediaMock.settings.canvasScaleFactor = 0.5;      // TypeError
-MediaMock.configure({ canvasScaleFactor: 0.5 }); // do this instead
+MediaMock.settings.mediaURL;                       // "./assets/frame.png"
+MediaMock.settings.canvasScaleFactor = 0.5;        // TypeError
+MediaMock.settings.constraints.width = false;      // TypeError
+MediaMock.settings.device.mediaDeviceInfo.push(d); // TypeError
+
+MediaMock.configure({ canvasScaleFactor: 0.5 });   // do this instead
+MediaMock.addMockDevice(d);                        // and this
 ```
 
 #### `addMockDevice(device: MockMediaDeviceInfo): MediaMock`
@@ -664,6 +729,33 @@ interface MockMediaDeviceInfo extends MediaDeviceInfo {
 ```
 
 ---
+
+## Testing with Playwright
+
+The mock replaces methods on `MediaDevices.prototype`, so it takes effect from the moment the module runs — but only in the realm it runs in. Two consequences worth knowing:
+
+- **Install it before the page's own scripts.** If your app calls `getUserMedia` during startup, set the mock up in `page.addInitScript()` rather than after `page.goto()`.
+- **It does not reach into iframes.** Each frame is its own realm with its own `MediaDevices.prototype`. A page under test that runs your camera code inside an iframe will see the real (or missing) camera there.
+
+### WebKit on Linux never reports `readyState === 4`
+
+A `<video>` fed a `MediaStream` stays at `HAVE_FUTURE_DATA` (3) forever under WebKit on Linux — in a CI container, or anywhere Playwright's Linux WebKit build is used. It is not specific to this library: a bare `canvas.captureStream()` behaves the same way, while a plain video file in the same browser reaches 4. Chromium on Linux and WebKit on macOS both reach 4.
+
+Playback is healthy regardless — `currentTime` advances, frames arrive at the requested rate — so wait on an event rather than polling the property:
+
+```typescript
+const video = document.createElement("video");
+video.srcObject = await navigator.mediaDevices.getUserMedia({ video: true });
+await video.play();
+
+// Portable: fires on Chromium and WebKit alike
+await new Promise((resolve) => video.addEventListener("playing", resolve, { once: true }));
+
+// Or wait for an actual frame
+await new Promise((resolve) => video.requestVideoFrameCallback(resolve));
+```
+
+`canplay`, `canplaythrough`, `loadeddata` and `playing` all fire on both engines. Only `readyState === 4` is unreliable.
 
 ### Debugging
 

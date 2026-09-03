@@ -18,7 +18,7 @@ export type PatchableMethod =
  * Holds the native implementations while mocks are installed.
  */
 export class MediaDevicesPatcher {
-  private readonly restores = new Map<PatchableMethod, VoidFunction>();
+  private readonly originals = new Map<PatchableMethod, AnyFn>();
 
   /** Whether the environment exposes `MediaDevices` at all (jsdom/node do not). */
   static isSupported(): boolean {
@@ -27,7 +27,7 @@ export class MediaDevicesPatcher {
 
   /** Number of methods currently patched. */
   get patchedCount(): number {
-    return this.restores.size;
+    return this.originals.size;
   }
 
   /**
@@ -44,12 +44,22 @@ export class MediaDevicesPatcher {
 
     const proto = MediaDevices.prototype as unknown as Record<string, AnyFn>;
 
-    if (!this.restores.has(method)) {
-      const original = proto[method];
-      this.restores.set(method, () => {
-        proto[method] = original;
-      });
+    if (!this.originals.has(method)) {
+      this.originals.set(method, proto[method]);
     }
+    const original = this.originals.get(method);
+
+    // Wear the native name and arity. Feature detection and wrappers that
+    // forward arguments by `length` read both, and an anonymous zero-name
+    // function is an obvious tell that the API has been replaced.
+    Object.defineProperty(mockFn, "name", {
+      value: original?.name ?? method,
+      configurable: true,
+    });
+    Object.defineProperty(mockFn, "length", {
+      value: original?.length ?? 0,
+      configurable: true,
+    });
 
     proto[method] = mockFn;
   }
@@ -58,9 +68,10 @@ export class MediaDevicesPatcher {
    * Restores every patched method to its native implementation.
    */
   restoreAll(): void {
-    for (const restore of this.restores.values()) {
-      restore();
+    for (const [method, original] of this.originals) {
+      (MediaDevices.prototype as unknown as Record<string, AnyFn>)[method] =
+        original;
     }
-    this.restores.clear();
+    this.originals.clear();
   }
 }
