@@ -673,6 +673,7 @@ interface MockOptions {
   };
   frames?: boolean;
   audio?: boolean;
+  emulateVideoFrameCallback?: boolean;
 }
 ```
 
@@ -681,6 +682,7 @@ interface MockOptions {
 - **mediaDevices.enumerateDevices**: `boolean` (default `true`) - Enables `navigator.mediaDevices.enumerateDevices`.
 - **frames**: `boolean` (default `true`) - Whether to paint real video frames. Needs a canvas with a 2D context and `captureStream()`, so set `false` in a DOM emulator. See [Unit testing without a browser](#unit-testing-without-a-browser).
 - **audio**: `boolean` (default `true`) - Whether to produce an audio track. Needs Web Audio; with `false`, a request for audio is refused with `NotFoundError`.
+- **emulateVideoFrameCallback**: `boolean` (default `false`) - Deliver `requestVideoFrameCallback` for a `<video>` playing a mocked stream, for WebKit under a virtual monitor where the browser never does. Fires only on frames that actually arrived. See [emulateVideoFrameCallback](#emulatevideoframecallback).
 
 ### `Settings`
 
@@ -832,7 +834,26 @@ The two defects need different answers:
 - **`readyState` stuck at 3** happens in WebKit on Linux either way. Wait on `playing` or `canplay`, which fire correctly in every case above.
 - **rVFC silent** happens only under a virtual monitor. **Run WebKit headless in CI if you can** — that alone restores it.
 
-Where the virtual monitor has to stay, the signals that hold everywhere are the decoded frame count and `currentTime`:
+#### `emulateVideoFrameCallback`
+
+Where the virtual monitor has to stay, the mock can deliver the callback itself:
+
+```typescript
+MediaMock.mock(devices["iPhone 12"], { emulateVideoFrameCallback: true });
+```
+
+Measured through the built bundle in the same container, three seconds per row:
+
+| WebKit under xvfb | rVFC calls | frames decoded |
+| --- | --- | --- |
+| default (the browser's own) | 0 | 83 |
+| `emulateVideoFrameCallback: true` | 84 | 84 |
+
+It reports frames rather than inventing them. A callback fires only once the video's decoded frame count has actually advanced, so on a stalled stream it goes quiet exactly as the real one does — it cannot paper over a stream that has stopped. Videos playing anything other than a mocked stream keep the browser's own implementation, and `unmock()` restores it.
+
+Off by default: WebKit headless and every Chromium mode deliver the callback themselves, and standing in for a working browser API is not something to do unasked.
+
+The signals below need no option at all and hold everywhere:
 
 ```typescript
 const before = video.getVideoPlaybackQuality().totalVideoFrames;

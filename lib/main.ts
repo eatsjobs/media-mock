@@ -44,6 +44,7 @@ import {
   createSyntheticVideoTrack,
 } from "./syntheticStream";
 import { decorateAudioTrack, decorateVideoTrack } from "./track";
+import { VideoFrameCallbackDriver } from "./videoFrameCallback";
 
 export interface MockOptions {
   /** Which `navigator.mediaDevices` methods to replace. All of them by default. */
@@ -66,6 +67,25 @@ export interface MockOptions {
   frames?: boolean;
 
   /**
+   * Whether the mock should deliver `requestVideoFrameCallback` itself for a
+   * `<video>` playing a mocked stream.
+   *
+   * WebKit on Linux under a virtual monitor decodes frames and advances
+   * `currentTime` but never presents any, and the callback fires on
+   * presentation — so it is never invoked, however healthy the stream is.
+   * Running WebKit headless restores it; this is for when the virtual monitor
+   * has to stay.
+   *
+   * Driven by evidence, not a timer: a callback fires only once the video's
+   * decoded frame count has actually advanced, so it goes quiet on a stalled
+   * stream exactly as the real one would. Videos playing anything else keep the
+   * browser's own implementation.
+   *
+   * @default false
+   */
+  emulateVideoFrameCallback?: boolean;
+
+  /**
    * Whether `getUserMedia` should produce an audio track.
    *
    * Needs Web Audio, which a DOM emulator does not have. With `false`, a
@@ -86,6 +106,7 @@ interface ResolvedMockOptions {
   };
   frames: boolean;
   audio: boolean;
+  emulateVideoFrameCallback: boolean;
 }
 
 function resolveMockOptions(options?: MockOptions): ResolvedMockOptions {
@@ -98,6 +119,7 @@ function resolveMockOptions(options?: MockOptions): ResolvedMockOptions {
     },
     frames: options?.frames ?? true,
     audio: options?.audio ?? true,
+    emulateVideoFrameCallback: options?.emulateVideoFrameCallback ?? false,
   };
 }
 
@@ -320,6 +342,11 @@ export class MediaMockClass {
   private readonly patcher = new MediaDevicesPatcher();
 
   private readonly microphone = new Microphone();
+
+  private readonly frameCallbacks = new VideoFrameCallbackDriver();
+
+  /** Streams this instance handed out, so the driver speaks only for them. */
+  private readonly ownStreams = new WeakSet<MediaStream>();
 
   /** Whether this mock may paint frames and open a microphone. */
   private produceFrames = true;
@@ -621,6 +648,10 @@ export class MediaMockClass {
     this.produceFrames = resolved.frames;
     this.produceAudio = resolved.audio;
 
+    if (resolved.emulateVideoFrameCallback) {
+      this.frameCallbacks.install((stream) => this.ownStreams.has(stream));
+    }
+
     // Clone the config so addMockDevice/removeMockDevice never mutate the
     // caller's object (the exported presets are shared across tests).
     this.state.device = cloneDeviceConfig(device);
@@ -669,6 +700,7 @@ export class MediaMockClass {
     this.disableDebugMode();
     this.mockedVideoTracksHandler = (tracks) => tracks;
     this.simulatedGetUserMediaError = null;
+    this.frameCallbacks.uninstall();
     this.patcher.restoreAll();
 
     return this;
@@ -873,6 +905,7 @@ export class MediaMockClass {
     this.currentStream = this.produceFrames
       ? new MediaStream(tracks)
       : createSyntheticStream(tracks);
+    this.ownStreams.add(this.currentStream);
 
     return this.currentStream;
   }
