@@ -147,6 +147,9 @@ function applyCapabilities(
  * capture track knows nothing of torch or zoom, so asking for one is refused
  * with `OverconstrainedError: Unsupported constraint` even though
  * `getCapabilities()` just said it was available.
+ *
+ * `getConstraints()` reports the last call that succeeded, as the Media Capture
+ * specification defines it.
  */
 function honourAdvertisedConstraints(
   track: MediaStreamTrack,
@@ -154,6 +157,7 @@ function honourAdvertisedConstraints(
   applied: MediaTrackSettings,
 ): void {
   const nativeApply = track.applyConstraints?.bind(track);
+  let lastApplied: MediaTrackConstraints | null = null;
 
   track.applyConstraints = async (
     constraints: MediaTrackConstraints = {},
@@ -171,7 +175,15 @@ function honourAdvertisedConstraints(
     if (outcome.remainder !== null && nativeApply) {
       await nativeApply(outcome.remainder);
     }
+
+    // Recorded last, so a call the browser refuses leaves the previous ones.
+    lastApplied = deepCopy(constraints);
   };
+
+  // The native track only ever saw the remainder, so it cannot answer this.
+  const nativeGetConstraints = track.getConstraints?.bind(track);
+  track.getConstraints = () =>
+    lastApplied ? deepCopy(lastApplied) : (nativeGetConstraints?.() ?? {});
 }
 
 /**

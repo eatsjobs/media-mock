@@ -203,6 +203,79 @@ describe("decorateVideoTrack", () => {
     expect(backCamera.getCapabilities().width).toEqual({ min: 1, max: 4032 });
   });
 
+  describe("getConstraints", () => {
+    it("should return the constraints of the last successful applyConstraints", async () => {
+      const track = stubTrack();
+      decorateVideoTrack(track, decoration);
+
+      await track.applyConstraints({
+        advanced: [{ torch: true } as MediaTrackConstraintSet],
+      });
+
+      expect(track.getConstraints()).toEqual({
+        advanced: [{ torch: true } as MediaTrackConstraintSet],
+      });
+    });
+
+    it("should report only the most recent call", async () => {
+      const track = stubTrack();
+      decorateVideoTrack(track, decoration);
+
+      await track.applyConstraints({
+        advanced: [{ torch: true } as MediaTrackConstraintSet],
+      });
+      await track.applyConstraints({
+        advanced: [{ torch: false } as MediaTrackConstraintSet],
+      });
+
+      expect(track.getConstraints()).toEqual({
+        advanced: [{ torch: false } as MediaTrackConstraintSet],
+      });
+    });
+
+    it("should keep the previous constraints when applyConstraints rejects", async () => {
+      const track = stubTrack();
+      decorateVideoTrack(track, decoration);
+
+      await track.applyConstraints({
+        advanced: [{ torch: true } as MediaTrackConstraintSet],
+      });
+      await expect(
+        track.applyConstraints({ width: { exact: 99999 } }),
+      ).rejects.toMatchObject({ name: "OverconstrainedError" });
+
+      expect(track.getConstraints()).toEqual({
+        advanced: [{ torch: true } as MediaTrackConstraintSet],
+      });
+    });
+
+    it("should return a copy a caller cannot use to alter the record", async () => {
+      const track = stubTrack();
+      decorateVideoTrack(track, decoration);
+
+      await track.applyConstraints({
+        advanced: [{ torch: true } as MediaTrackConstraintSet],
+      });
+      track
+        .getConstraints()
+        .advanced?.push({ torch: false } as MediaTrackConstraintSet);
+
+      expect(track.getConstraints()).toEqual({
+        advanced: [{ torch: true } as MediaTrackConstraintSet],
+      });
+    });
+
+    it("should defer to the track until something has been applied", () => {
+      const track = stubTrack(
+        {},
+        { getConstraints: () => ({ facingMode: "environment" }) },
+      );
+      decorateVideoTrack(track, decoration);
+
+      expect(track.getConstraints()).toEqual({ facingMode: "environment" });
+    });
+  });
+
   it("should not let a caller mutate the capabilities it hands out", () => {
     const track = stubTrack();
     decorateVideoTrack(track, decoration);

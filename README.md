@@ -26,6 +26,7 @@ Can also be used as browser extension please have a look at this repo [https://g
   - [Streaming Your Own Canvas (3D scenes)](#streaming-your-own-canvas-3d-scenes)
   - [Audio](#audio)
   - [Constraints the device cannot meet](#constraints-the-device-cannot-meet)
+  - [Tuning a live track (zoom, torch, focus, exposure)](#tuning-a-live-track-zoom-torch-focus-exposure)
   - [Simulating Errors](#simulating-errors)
   - [Creating Custom Mock Devices](#creating-custom-mock-devices)
 - [Migrating to 2.0](#migrating-to-20) · [full guide](./MIGRATION.md)
@@ -328,6 +329,35 @@ await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 99999 } } }
 ```
 
 Checked against the selected device's `getCapabilities()`: `width`, `height` (in either orientation, since a sensor held sideways produces the transpose), `frameRate`, `aspectRatio`, and for audio `channelCount`, `sampleRate`, `sampleSize`. A capability the device does not declare is not checked, and neither is a constraint the device reports as unsupported through `getSupportedConstraints()` — a UA ignores a constraint it does not implement. Requesting neither `video` nor `audio` rejects with a `TypeError`, as browsers do.
+
+## Tuning a live track (zoom, torch, focus, exposure)
+
+`track.applyConstraints()` works against the capabilities the selected device declares, the way a real camera does:
+
+```typescript
+MediaMock.mock(devices["iPhone 12"]);
+const back = (await navigator.mediaDevices.enumerateDevices()).find((d) => d.label === "Back Camera")!;
+const stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: back.deviceId } } });
+const [track] = stream.getVideoTracks();
+
+await track.applyConstraints({ advanced: [{ zoom: 2 }] });
+track.getSettings().zoom;   // 2
+
+await track.applyConstraints({ advanced: [{ torch: true }] });
+track.getSettings().torch;  // true
+
+await track.applyConstraints({ advanced: [{ focusMode: "manual", focusDistance: 0.3 }] });
+track.getSettings().focusMode;  // "manual"
+
+track.getConstraints();  // { advanced: [{ focusMode: "manual", focusDistance: 0.3 }] }
+```
+
+- **Checked against `getCapabilities()`.** A value inside the declared range (or list) is accepted and reported by `getSettings()`.
+- **`advanced` is best effort.** An `advanced` entry naming a constraint the device does not declare, or a value outside its range, is ignored: it never rejects and never reaches `getSettings()`.
+- **Basic constraints are mandatory.** `applyConstraints({ zoom: 99 })` against a device whose zoom tops out at 4 rejects with an `OverconstrainedError` whose `constraint` is `"zoom"`.
+- **`getConstraints()`** returns what the most recent *successful* `applyConstraints()` was given; a rejected call leaves it unchanged.
+- **Built-in presets.** The iPhone 12 and Galaxy M53 back cameras declare `torch`, `zoom`, `focusMode`, `exposureMode`, `exposureTime` and `exposureCompensation`; the iPhone back cameras also declare `focusDistance`. Front cameras and the Mac Desktop camera declare no focus or exposure controls.
+- **Custom devices.** A device built with `createMediaDeviceInfo` accepts exactly the constraints its `mockCapabilities` declare, so declare `focusMode`, `exposureTime` and the rest to test code that uses them.
 
 ## Simulating Errors
 
@@ -651,6 +681,10 @@ function createMediaDeviceInfo(options: {
 interface EnhancedMediaTrackCapabilities extends MediaTrackCapabilities {
   whiteBalanceMode?: string[];
   focusDistance?: { min: number };
+  focusMode?: string[];
+  exposureMode?: string[];
+  exposureTime?: { max: number; min: number; step: number };
+  exposureCompensation?: { max: number; min: number; step: number };
   zoom?: { max: number; min: number };
   torch?: boolean;
   backgroundBlur?: boolean[];
