@@ -46,7 +46,11 @@ export class CaptureSurface {
     canvas.width = resolution.width;
     canvas.height = resolution.height;
 
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    // No willReadFrequently: it keeps the canvas on the CPU. At 4K on a Galaxy
+    // M53 in Chrome, a WebGL consumer received 12-18% fewer frames with it and
+    // waited about three times as long for each (#81). The only readback is
+    // commitPixels(), once per start, which does not call for it.
+    const ctx = canvas.getContext("2d");
     if (!ctx) {
       // A DOM emulator (happy-dom, jsdom) returns null here: it has no
       // rasteriser, so no frames can ever be painted. Name the way out.
