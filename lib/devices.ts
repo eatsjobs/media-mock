@@ -58,6 +58,20 @@ const audioInputCapabilities: EnhancedMediaTrackCapabilities = {
   sampleSize: { max: 16, min: 16 },
 };
 
+/**
+ * Focus and exposure controls a handset's back camera reports. Front cameras
+ * are fixed-focus and omit them.
+ */
+const backCameraFocusAndExposure: Pick<
+  EnhancedMediaTrackCapabilities,
+  "exposureCompensation" | "exposureMode" | "exposureTime" | "focusMode"
+> = {
+  exposureCompensation: { max: 2, min: -2, step: 0.1 },
+  exposureMode: ["manual", "single-shot", "continuous"],
+  exposureTime: { max: 1000, min: 3, step: 1 },
+  focusMode: ["manual", "single-shot", "continuous"],
+};
+
 export interface DeviceConfig {
   videoResolutions: { width: number; height: number }[];
   mediaDeviceInfo: MockMediaDeviceInfo[];
@@ -110,6 +124,7 @@ export const devices: Record<DeviceName, DeviceConfig> = {
           deviceId: "D87C414E22C375BB0697DCB83A24D97BD520624D",
           facingMode: ["environment"],
           focusDistance: { min: 0.12 },
+          ...backCameraFocusAndExposure,
           frameRate: { max: 60, min: 1 },
           groupId: "A1F2417053FF79495E7D01AF37A6C4461CE0C060",
           height: { max: 3024, min: 1 },
@@ -129,6 +144,7 @@ export const devices: Record<DeviceName, DeviceConfig> = {
           deviceId: "BE00A990BEDE2D324EB0AD51F567EE4ADC24D9B0",
           facingMode: ["environment"],
           focusDistance: { min: 0.12 },
+          ...backCameraFocusAndExposure,
           frameRate: { max: 60, min: 1 },
           groupId: "B402A3862F28FB8D54BDF33BD7D41874FE175517",
           height: { max: 3024, min: 1 },
@@ -148,6 +164,7 @@ export const devices: Record<DeviceName, DeviceConfig> = {
           deviceId: "D13A012C1D5C9F9899B40BDA0790184EE57FD282",
           facingMode: ["environment"],
           focusDistance: { min: 0.12 },
+          ...backCameraFocusAndExposure,
           frameRate: { max: 60, min: 1 },
           groupId: "14122C2CE97B69A84360822AB87E8206C32B5BD8",
           height: { max: 3024, min: 1 },
@@ -233,6 +250,8 @@ export const devices: Record<DeviceName, DeviceConfig> = {
           resizeMode: ["none", "crop-and-scale"],
           width: { max: 3840, min: 1 },
           torch: true,
+          zoom: { max: 8, min: 1 },
+          ...backCameraFocusAndExposure,
         },
       }),
       createMediaDeviceInfo({

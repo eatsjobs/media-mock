@@ -2,6 +2,36 @@
 
 Upgrading from 1.x reaches the current release through every section below, so read them all — the change most likely to surface in an existing test suite is [`getCapabilities()`](#getcapabilities-now-describes-the-emulated-camera), in 2.0 → 2.1.
 
+## 2.3 → 2.4
+
+No API changed shape, but `applyConstraints()` now follows the specification in two ways that a test can notice. Each call is the whole constraint set rather than an addition to the previous ones, and basic constraints follow the same rules as `getUserMedia`: `exact`, `min` and `max` are mandatory, while `ideal` and bare values are preferences. On a camera whose zoom goes from 1 to 4:
+
+| After | 2.3 | 2.4 |
+| --- | --- | --- |
+| `applyConstraints({ zoom: 99 })` | rejects with `OverconstrainedError` | settles on zoom 4 |
+| `applyConstraints({ zoom: { ideal: 99 } })` | rejects with `OverconstrainedError` | settles on zoom 4 |
+| `applyConstraints({ zoom: { min: 2 } })` | rejects with `OverconstrainedError` | settles on zoom 2 |
+| `applyConstraints({ whiteBalanceMode: ["auto", "manual"] })` | rejects with `OverconstrainedError` | settles on `"manual"` |
+| `applyConstraints({ advanced: [{ torch: true }] })`, then `applyConstraints({ advanced: [{ zoom: 2 }] })` | `getSettings()` reports `torch: true` and `zoom: 2` | `getSettings()` reports `zoom: 2` only |
+| a call the browser rejects | settings the mock settled were already applied | settings and `getConstraints()` keep the previous call |
+| `getConstraints()` | `{}` | the last successful call's constraints |
+
+If a test expected a basic constraint to be refused, make it mandatory:
+
+```diff
+-await track.applyConstraints({ zoom: 99 });
++await track.applyConstraints({ zoom: { exact: 99 } });
+```
+
+If a test relied on an earlier setting surviving a later call, repeat it in the later call:
+
+```diff
+-await track.applyConstraints({ advanced: [{ zoom: 2 }] });
++await track.applyConstraints({ advanced: [{ torch: true }, { zoom: 2 }] });
+```
+
+---
+
 ## 2.0 → 2.1
 
 No API changed shape, but three requests that used to succeed now fail — in each case because the mock was succeeding where real hardware fails, so a test relying on the old behaviour was never exercising its own failure path.

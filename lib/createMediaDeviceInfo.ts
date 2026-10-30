@@ -3,6 +3,10 @@ import { deepCopy } from "./deepCopy";
 export interface EnhancedMediaTrackCapabilities extends MediaTrackCapabilities {
   whiteBalanceMode?: string[];
   focusDistance?: { min: number };
+  focusMode?: string[];
+  exposureMode?: string[];
+  exposureTime?: { max: number; min: number; step: number };
+  exposureCompensation?: { max: number; min: number; step: number };
   zoom?: { max: number; min: number };
   torch?: boolean;
   backgroundBlur?: boolean[];
