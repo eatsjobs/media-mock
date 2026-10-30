@@ -57,18 +57,7 @@ describe("mobile back camera presets", () => {
   });
 
   it("should reflect a manual focus request in the track's settings", async () => {
-    const back = devices["iPhone 12"].mediaDeviceInfo.find(
-      (d) => d.label === "Back Camera",
-    );
-    const track = {
-      getSettings: () => ({}),
-    } as unknown as MediaStreamTrack;
-    decorateVideoTrack(track, {
-      device: back,
-      fps: 30,
-      resolution: { width: 1280, height: 720 },
-      deviceResolutions: [],
-    });
+    const track = iPhoneBackCameraTrack();
 
     const advanced = [{ focusMode: "manual", focusDistance: 0.3 }];
     await track.applyConstraints({ advanced } as MediaTrackConstraints);
@@ -79,4 +68,48 @@ describe("mobile back camera presets", () => {
     });
     expect(track.getConstraints()).toEqual({ advanced });
   });
+
+  it("should ignore advanced focus and exposure values the camera cannot meet", async () => {
+    const track = iPhoneBackCameraTrack();
+
+    const advanced = [{ focusMode: "bogus", exposureTime: 99999 }];
+    await track.applyConstraints({ advanced } as MediaTrackConstraints);
+
+    const settings = track.getSettings() as Record<string, unknown>;
+    expect(settings.focusMode).toBeUndefined();
+    expect(settings.exposureTime).toBeUndefined();
+  });
+
+  it.each([
+    ["focusMode", "bogus"],
+    ["exposureMode", "bogus"],
+    ["exposureTime", 99999],
+    ["exposureCompensation", -99],
+  ])("should refuse a basic %s of %s", async (name, value) => {
+    const track = iPhoneBackCameraTrack();
+
+    await expect(
+      track.applyConstraints({ [name]: value } as MediaTrackConstraints),
+    ).rejects.toMatchObject({
+      name: "OverconstrainedError",
+      constraint: name,
+    });
+  });
 });
+
+/** A track decorated as the iPhone 12 "Back Camera", with no browser behind it. */
+function iPhoneBackCameraTrack(): MediaStreamTrack {
+  const back = devices["iPhone 12"].mediaDeviceInfo.find(
+    (d) => d.label === "Back Camera",
+  );
+  const track = {
+    getSettings: () => ({}),
+  } as unknown as MediaStreamTrack;
+  decorateVideoTrack(track, {
+    device: back,
+    fps: 30,
+    resolution: { width: 1280, height: 720 },
+    deviceResolutions: [],
+  });
+  return track;
+}

@@ -276,6 +276,86 @@ describe("decorateVideoTrack", () => {
     });
   });
 
+  describe("applyConstraints", () => {
+    // `height` is not among backCamera's capabilities, so it is forwarded to the
+    // track's own applyConstraints while `torch` is settled by the mock.
+    const torchAndHeight = {
+      height: 480,
+      advanced: [{ torch: true } as MediaTrackConstraintSet],
+    };
+
+    it("should leave the settings alone when the browser refuses the rest", async () => {
+      const track = stubTrack(
+        {},
+        { applyConstraints: () => Promise.reject(new Error("refused")) },
+      );
+      decorateVideoTrack(track, decoration);
+
+      await expect(track.applyConstraints(torchAndHeight)).rejects.toThrow(
+        "refused",
+      );
+
+      expect(
+        (track.getSettings() as { torch?: boolean }).torch,
+      ).toBeUndefined();
+    });
+
+    it("should drop settings the latest constraints no longer ask for", async () => {
+      // Each call replaces the whole constraint set, as the specification says,
+      // so getSettings() and getConstraints() describe the same request.
+      const track = stubTrack();
+      decorateVideoTrack(track, decoration);
+
+      await track.applyConstraints({
+        advanced: [{ torch: true } as MediaTrackConstraintSet],
+      });
+      await track.applyConstraints({});
+
+      expect(
+        (track.getSettings() as { torch?: boolean }).torch,
+      ).toBeUndefined();
+    });
+
+    it("should settle overlapping calls in the order they were made", async () => {
+      let releaseBrowser = () => {};
+      const browserDone = new Promise<void>((resolve) => {
+        releaseBrowser = resolve;
+      });
+      const track = stubTrack({}, { applyConstraints: () => browserDone });
+      decorateVideoTrack(track, decoration);
+
+      // The first call waits on the browser; the second needs nothing from it.
+      const first = track.applyConstraints(torchAndHeight);
+      const second = track.applyConstraints({
+        advanced: [{ torch: false } as MediaTrackConstraintSet],
+      });
+      releaseBrowser();
+      await Promise.all([first, second]);
+
+      expect(track.getConstraints()).toEqual({
+        advanced: [{ torch: false } as MediaTrackConstraintSet],
+      });
+      expect((track.getSettings() as { torch?: boolean }).torch).toBe(false);
+    });
+
+    it("should still serve later calls after one is refused", async () => {
+      const track = stubTrack(
+        {},
+        { applyConstraints: () => Promise.reject(new Error("refused")) },
+      );
+      decorateVideoTrack(track, decoration);
+
+      const refused = track.applyConstraints(torchAndHeight);
+      const accepted = track.applyConstraints({
+        advanced: [{ torch: false } as MediaTrackConstraintSet],
+      });
+
+      await expect(refused).rejects.toThrow("refused");
+      await expect(accepted).resolves.toBeUndefined();
+      expect((track.getSettings() as { torch?: boolean }).torch).toBe(false);
+    });
+  });
+
   it("should not let a caller mutate the capabilities it hands out", () => {
     const track = stubTrack();
     decorateVideoTrack(track, decoration);

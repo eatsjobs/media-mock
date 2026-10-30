@@ -39,8 +39,7 @@ export function decorateVideoTrack(
   );
 
   // What applyConstraints() has settled, reported back through getSettings().
-  const applied: MediaTrackSettings = {};
-  honourAdvertisedConstraints(track, capabilities, applied);
+  const appliedSettings = honourAdvertisedConstraints(track, capabilities);
 
   extendSettings(track, (settings) => {
     // Real devices always report a frame rate and a frame size.
@@ -64,7 +63,7 @@ export function decorateVideoTrack(
     }
 
     // Anything applyConstraints() settled wins: it is the most recent word.
-    Object.assign(settings, applied);
+    Object.assign(settings, appliedSettings());
   });
 }
 
@@ -148,20 +147,23 @@ function applyCapabilities(
  * with `OverconstrainedError: Unsupported constraint` even though
  * `getCapabilities()` just said it was available.
  *
- * `getConstraints()` reports the last call that succeeded, as the Media Capture
- * specification defines it.
+ * Each call replaces the previous constraint set, as the Media Capture
+ * specification defines it: `getConstraints()` reports the last call that
+ * succeeded, and `getSettings()` only what that call settled. Calls run one
+ * after another, so one waiting on the browser cannot be overtaken.
+ *
+ * Returns what the last successful call settled.
  */
 function honourAdvertisedConstraints(
   track: MediaStreamTrack,
   capabilities: EnhancedMediaTrackCapabilities,
-  applied: MediaTrackSettings,
-): void {
+): () => MediaTrackSettings {
   const nativeApply = track.applyConstraints?.bind(track);
   let lastApplied: MediaTrackConstraints | null = null;
+  let applied: MediaTrackSettings = {};
+  let previousCall: Promise<unknown> = Promise.resolve();
 
-  track.applyConstraints = async (
-    constraints: MediaTrackConstraints = {},
-  ): Promise<void> => {
+  const apply = async (constraints: MediaTrackConstraints): Promise<void> => {
     const outcome = applyToCapabilities(constraints, capabilities);
 
     if (outcome.unsatisfiable !== null) {
@@ -170,20 +172,31 @@ function honourAdvertisedConstraints(
       });
     }
 
-    Object.assign(applied, outcome.settings);
-
     if (outcome.remainder !== null && nativeApply) {
       await nativeApply(outcome.remainder);
     }
 
-    // Recorded last, so a call the browser refuses leaves the previous ones.
+    // Committed only once the browser has agreed, so a refused call leaves
+    // both the previous settings and the previous constraints in place.
+    applied = outcome.settings;
     lastApplied = deepCopy(constraints);
+  };
+
+  track.applyConstraints = (
+    constraints: MediaTrackConstraints = {},
+  ): Promise<void> => {
+    const call = previousCall.then(() => apply(constraints));
+    // A refused call must not hold up the ones queued behind it.
+    previousCall = call.catch(() => undefined);
+    return call;
   };
 
   // The native track only ever saw the remainder, so it cannot answer this.
   const nativeGetConstraints = track.getConstraints?.bind(track);
   track.getConstraints = () =>
     lastApplied ? deepCopy(lastApplied) : (nativeGetConstraints?.() ?? {});
+
+  return () => applied;
 }
 
 /**

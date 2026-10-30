@@ -355,7 +355,7 @@ track.getConstraints();  // { advanced: [{ focusMode: "manual", focusDistance: 0
 - **Checked against `getCapabilities()`.** A value inside the declared range (or list) is accepted and reported by `getSettings()`.
 - **`advanced` is best effort.** An `advanced` entry naming a constraint the device does not declare, or a value outside its range, is ignored: it never rejects and never reaches `getSettings()`.
 - **Basic constraints are mandatory.** `applyConstraints({ zoom: 99 })` against a device whose zoom tops out at 4 rejects with an `OverconstrainedError` whose `constraint` is `"zoom"`.
-- **`getConstraints()`** returns what the most recent *successful* `applyConstraints()` was given; a rejected call leaves it unchanged.
+- **Each call replaces the last.** `getSettings()` reports what the latest call settled, so a setting it no longer asks for is dropped. `getConstraints()` returns what the most recent *successful* `applyConstraints()` was given. A rejected call leaves both unchanged, and calls settle in the order they were made.
 - **Built-in presets.** The iPhone 12 and Galaxy M53 back cameras declare `torch`, `zoom`, `focusMode`, `exposureMode`, `exposureTime` and `exposureCompensation`; the iPhone back cameras also declare `focusDistance`. Front cameras and the Mac Desktop camera declare no focus or exposure controls.
 - **Custom devices.** A device built with `createMediaDeviceInfo` accepts exactly the constraints its `mockCapabilities` declare, so declare `focusMode`, `exposureTime` and the rest to test code that uses them.
 

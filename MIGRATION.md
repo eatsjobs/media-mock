@@ -2,6 +2,25 @@
 
 Upgrading from 1.x reaches the current release through every section below, so read them all — the change most likely to surface in an existing test suite is [`getCapabilities()`](#getcapabilities-now-describes-the-emulated-camera), in 2.0 → 2.1.
 
+## 2.3 → 2.4
+
+No API changed shape, but `applyConstraints()` now treats each call as the whole constraint set, as the specification does, instead of adding to the previous ones:
+
+| After | 2.3 | 2.4 |
+| --- | --- | --- |
+| `applyConstraints({ advanced: [{ torch: true }] })`, then `applyConstraints({ advanced: [{ zoom: 2 }] })` | `getSettings()` reports `torch: true` and `zoom: 2` | `getSettings()` reports `zoom: 2` only |
+| a call the browser rejects | settings the mock settled were already applied | settings and `getConstraints()` keep the previous call |
+| `getConstraints()` | `{}` | the last successful call's constraints |
+
+If a test relied on an earlier setting surviving a later call, repeat it in the later call:
+
+```diff
+-await track.applyConstraints({ advanced: [{ zoom: 2 }] });
++await track.applyConstraints({ advanced: [{ torch: true }, { zoom: 2 }] });
+```
+
+---
+
 ## 2.0 → 2.1
 
 No API changed shape, but three requests that used to succeed now fail — in each case because the mock was succeeding where real hardware fails, so a test relying on the old behaviour was never exercising its own failure path.
