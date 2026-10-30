@@ -27,18 +27,104 @@ export interface AppliedConstraints {
   unsatisfiable: string | null;
 }
 
-/** The concrete value a constrainable asks for, ignoring how it was phrased. */
-function requestedValue(constraint: unknown): unknown {
-  if (constraint !== null && typeof constraint === "object") {
-    const candidates = constraint as Record<string, unknown>;
-    for (const key of ["exact", "ideal"]) {
-      if (candidates[key] !== undefined) {
-        return candidates[key];
-      }
-    }
-    return undefined;
+/**
+ * A constrainable value split into its members. `exact`, `min` and `max` are
+ * mandatory; `ideal` is a preference the device gets as close to as it can.
+ */
+interface ConstraintRequest {
+  exact?: unknown;
+  ideal?: unknown;
+  min?: number;
+  max?: number;
+}
+
+/**
+ * Splits a constrainable value into its members. A bare value (or bare list)
+ * means `ideal` in a basic constraint set and `exact` inside `advanced`, as the
+ * specification says.
+ */
+function parseConstraint(
+  constraint: unknown,
+  bare: "exact" | "ideal",
+): ConstraintRequest {
+  if (
+    constraint === null ||
+    typeof constraint !== "object" ||
+    Array.isArray(constraint)
+  ) {
+    return { [bare]: constraint };
   }
-  return constraint;
+
+  const { exact, ideal, min, max } = constraint as Record<string, unknown>;
+  return {
+    exact,
+    ideal,
+    min: typeof min === "number" ? min : undefined,
+    max: typeof max === "number" ? max : undefined,
+  };
+}
+
+/** A request with a mandatory member the device cannot meet. */
+const UNSATISFIABLE = Symbol("unsatisfiable");
+
+/** A value that may be a single candidate or a list of alternatives. */
+function alternatives(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [value];
+}
+
+function isRange(capability: unknown): capability is {
+  min?: number;
+  max?: number;
+} {
+  return (
+    capability !== null &&
+    typeof capability === "object" &&
+    !Array.isArray(capability)
+  );
+}
+
+/**
+ * The value `request` settles on against `capability`: `UNSATISFIABLE` when a
+ * mandatory member cannot be met, `undefined` when it settles nothing.
+ *
+ * A range with no `ideal` settles on its `min`, or on its `max` when only that
+ * is given — the bound the caller named, kept inside what the device can do.
+ */
+function resolve(capability: unknown, request: ConstraintRequest): unknown {
+  if (request.exact !== undefined) {
+    const value = alternatives(request.exact).find((candidate) =>
+      canSatisfy(capability, candidate),
+    );
+    return value === undefined ? UNSATISFIABLE : value;
+  }
+
+  if (isRange(capability)) {
+    const low = Math.max(
+      capability.min ?? Number.NEGATIVE_INFINITY,
+      request.min ?? Number.NEGATIVE_INFINITY,
+    );
+    const high = Math.min(
+      capability.max ?? Number.POSITIVE_INFINITY,
+      request.max ?? Number.POSITIVE_INFINITY,
+    );
+    if (low > high) {
+      return UNSATISFIABLE;
+    }
+    if (typeof request.ideal === "number") {
+      return Math.min(Math.max(request.ideal, low), high);
+    }
+    if (request.min !== undefined) {
+      return low;
+    }
+    return request.max !== undefined ? high : undefined;
+  }
+
+  // `min` and `max` mean nothing for a list or an on/off feature.
+  return request.ideal === undefined
+    ? undefined
+    : alternatives(request.ideal).find((candidate) =>
+        canSatisfy(capability, candidate),
+      );
 }
 
 /** Whether `capability` — as declared by the device — covers `value`. */
@@ -65,6 +151,10 @@ function canSatisfy(capability: unknown, value: unknown): boolean {
  * Splits a constraint request into what the device settles itself and what the
  * browser is still asked for.
  *
+ * Basic constraints follow the same rules as `getUserMedia`: `exact`, `min`
+ * and `max` refuse the call when unmet, while `ideal` and bare values settle on
+ * the closest value the device supports.
+ *
  * `advanced` entries are best effort, as the specification says: one naming
  * something the device cannot do is skipped rather than failing the call, and
  * none of them are ever forwarded — a capture track refuses them all.
@@ -89,19 +179,26 @@ export function applyToCapabilities(
       continue;
     }
 
-    const value = requestedValue(constraint);
-    if (!canSatisfy(declared[name], value)) {
-      // Basic constraints are mandatory, so this is a refusal.
+    const value = resolve(declared[name], parseConstraint(constraint, "ideal"));
+    if (value === UNSATISFIABLE) {
       unsatisfiable ??= name;
       continue;
     }
-    (settings as Record<string, unknown>)[name] = value;
+    if (value !== undefined) {
+      (settings as Record<string, unknown>)[name] = value;
+    }
   }
 
   for (const entry of advanced ?? []) {
     for (const [name, constraint] of Object.entries(entry)) {
-      const value = requestedValue(constraint);
-      if (name in declared && canSatisfy(declared[name], value)) {
+      if (!(name in declared)) {
+        continue;
+      }
+      const value = resolve(
+        declared[name],
+        parseConstraint(constraint, "exact"),
+      );
+      if (value !== UNSATISFIABLE && value !== undefined) {
         (settings as Record<string, unknown>)[name] = value;
       }
     }

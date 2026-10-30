@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { EnhancedMediaTrackCapabilities } from "../../lib/createMediaDeviceInfo";
 import { devices } from "../../lib/devices";
 import { decorateVideoTrack } from "../../lib/track";
 
@@ -85,15 +86,31 @@ describe("mobile back camera presets", () => {
     ["exposureMode", "bogus"],
     ["exposureTime", 99999],
     ["exposureCompensation", -99],
-  ])("should refuse a basic %s of %s", async (name, value) => {
+  ])("should refuse an exact %s of %s", async (name, value) => {
     const track = iPhoneBackCameraTrack();
 
     await expect(
-      track.applyConstraints({ [name]: value } as MediaTrackConstraints),
+      track.applyConstraints({
+        [name]: { exact: value },
+      } as MediaTrackConstraints),
     ).rejects.toMatchObject({
       name: "OverconstrainedError",
       constraint: name,
     });
+  });
+
+  it("should settle a bare exposureTime out of range on the closest one", async () => {
+    const track = iPhoneBackCameraTrack();
+    const { max } = (track.getCapabilities() as EnhancedMediaTrackCapabilities)
+      .exposureTime as { max: number };
+
+    await track.applyConstraints({
+      exposureTime: 99999,
+    } as MediaTrackConstraints);
+
+    expect(
+      (track.getSettings() as { exposureTime?: number }).exposureTime,
+    ).toBe(max);
   });
 });
 

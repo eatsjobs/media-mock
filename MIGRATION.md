@@ -4,13 +4,24 @@ Upgrading from 1.x reaches the current release through every section below, so r
 
 ## 2.3 → 2.4
 
-No API changed shape, but `applyConstraints()` now treats each call as the whole constraint set, as the specification does, instead of adding to the previous ones:
+No API changed shape, but `applyConstraints()` now follows the specification in two ways that a test can notice. Each call is the whole constraint set rather than an addition to the previous ones, and basic constraints follow the same rules as `getUserMedia`: `exact`, `min` and `max` are mandatory, while `ideal` and bare values are preferences. On a camera whose zoom goes from 1 to 4:
 
 | After | 2.3 | 2.4 |
 | --- | --- | --- |
+| `applyConstraints({ zoom: 99 })` | rejects with `OverconstrainedError` | settles on zoom 4 |
+| `applyConstraints({ zoom: { ideal: 99 } })` | rejects with `OverconstrainedError` | settles on zoom 4 |
+| `applyConstraints({ zoom: { min: 2 } })` | rejects with `OverconstrainedError` | settles on zoom 2 |
+| `applyConstraints({ whiteBalanceMode: ["auto", "manual"] })` | rejects with `OverconstrainedError` | settles on `"manual"` |
 | `applyConstraints({ advanced: [{ torch: true }] })`, then `applyConstraints({ advanced: [{ zoom: 2 }] })` | `getSettings()` reports `torch: true` and `zoom: 2` | `getSettings()` reports `zoom: 2` only |
 | a call the browser rejects | settings the mock settled were already applied | settings and `getConstraints()` keep the previous call |
 | `getConstraints()` | `{}` | the last successful call's constraints |
+
+If a test expected a basic constraint to be refused, make it mandatory:
+
+```diff
+-await track.applyConstraints({ zoom: 99 });
++await track.applyConstraints({ zoom: { exact: 99 } });
+```
 
 If a test relied on an earlier setting surviving a later call, repeat it in the later call:
 
