@@ -1,6 +1,11 @@
 {
   "name": "@eatsjobs/media-mock",
   "version": "2.4.0",
+  "description": "Mock navigator.mediaDevices in tests: fake webcams and microphones, device capabilities, constraints and getUserMedia errors, for Playwright, Vitest and DOM emulators.",
+  "homepage": "https://github.com/eatsjobs/media-mock#readme",
+  "bugs": {
+    "url": "https://github.com/eatsjobs/media-mock/issues"
+  },
   "publishConfig": {
     "access": "public"
   },
