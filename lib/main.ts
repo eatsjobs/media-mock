@@ -15,6 +15,7 @@ import {
 } from "./createGetUserMediaError";
 import type { MockMediaDeviceInfo } from "./createMediaDeviceInfo";
 import {
+  FrameStats,
   hideCanvasOffscreen,
   hideOffscreen,
   showCanvasForDebug,
@@ -33,6 +34,12 @@ import {
   type SupportedConstraints,
 } from "./devices";
 import { DrawingLoop, TimerMode } from "./drawingLoop";
+import {
+  FrameOutput,
+  type Nv12Output,
+  nv12Tick,
+  openNv12Output,
+} from "./frameOutput";
 import { Microphone } from "./microphone";
 import { MediaDevicesPatcher } from "./patchMediaDevices";
 import { ReadyStateReporter } from "./readyState";
@@ -138,6 +145,8 @@ export interface ConfigurableSettings {
   mediaTimeout?: number;
   /** @see Settings.timerMode */
   timerMode?: TimerMode;
+  /** @see Settings.frameOutput */
+  frameOutput?: FrameOutput;
 }
 
 export interface Settings {
@@ -182,6 +191,14 @@ export interface Settings {
    * @see TimerMode
    */
   timerMode: TimerMode;
+
+  /**
+   * How frames reach the page. Read by the next `getUserMedia` call.
+   * @type {FrameOutput}
+   * @default FrameOutput.Canvas
+   * @see FrameOutput
+   */
+  frameOutput: FrameOutput;
 }
 
 /**
@@ -279,6 +296,7 @@ export class MediaMockClass {
     canvasScaleFactor: 1,
     mediaTimeout: 60 * 1000, // 60 seconds
     timerMode: TimerMode.SetInterval,
+    frameOutput: FrameOutput.Canvas,
   };
 
   /**
@@ -322,6 +340,13 @@ export class MediaMockClass {
       this.state.timerMode = options.timerMode;
     }
 
+    if (options.frameOutput !== undefined) {
+      if (!Object.values(FrameOutput).includes(options.frameOutput)) {
+        throw new Error(`Unknown frameOutput: ${options.frameOutput}`);
+      }
+      this.state.frameOutput = options.frameOutput;
+    }
+
     return this;
   }
 
@@ -339,6 +364,11 @@ export class MediaMockClass {
 
   /** The canvas captureStream() runs on, created here or borrowed from a source. */
   private surface: CaptureSurface | undefined;
+
+  /** Where painted frames go instead of captureStream(), with NV12 output. */
+  private nv12Output: Nv12Output | undefined;
+
+  private readonly frameStats = new FrameStats();
 
   private readonly loop = new DrawingLoop();
 
@@ -537,13 +567,23 @@ export class MediaMockClass {
           Source: ${sourceWidth}x${sourceHeight}`);
     }
 
+    const output = this.nv12Output;
     this.loop.start(
-      () => {
-        surface.paint(source);
-      },
+      output
+        ? nv12Tick(
+            source,
+            surface,
+            surface.ctx,
+            output,
+            () => this.state.canvasScaleFactor,
+          )
+        : () => surface.paint(source),
       { fps: this.fps, mode: this.state.timerMode },
     );
-    surface.commitPixels();
+    // NV12 output reads every frame back, which commits it anyway.
+    if (!output) {
+      surface.commitPixels();
+    }
   }
 
   /**
@@ -589,7 +629,12 @@ export class MediaMockClass {
    */
   public enableDebugMode(): typeof MediaMock {
     this.debug = true;
+    this.showDebugElements();
+    this.showFrameStats();
+    return this;
+  }
 
+  private showDebugElements(): void {
     // Our own canvas is already attached to the DOM (hidden offscreen) by
     // getMockStream; in debug mode we flip it visible and add a red border. A
     // canvas borrowed from the consumer is left alone — it is part of their page.
@@ -604,8 +649,15 @@ export class MediaMockClass {
       }
       showForDebug(element);
     }
+  }
 
-    return this;
+  /** Shows what the consumer receives, once there is a stream with frames. */
+  private showFrameStats(): void {
+    const [track] = this.currentStream?.getVideoTracks?.() ?? [];
+    // A frameless track is not a real MediaStreamTrack, so it cannot be played.
+    if (track && this.produceFrames) {
+      this.frameStats.show(track);
+    }
   }
 
   /**
@@ -617,6 +669,7 @@ export class MediaMockClass {
    */
   public disableDebugMode(): typeof MediaMock {
     this.debug = false;
+    this.frameStats.hide();
 
     if (this.surface?.owned) {
       hideCanvasOffscreen(this.surface.canvas);
@@ -732,14 +785,16 @@ export class MediaMockClass {
     this.source?.dispose?.();
     this.source = undefined;
 
-    this.releaseCanvas();
+    this.releaseCapture();
   }
 
   /**
-   * Drops the reference to the capture canvas, detaching it only if we created
-   * it. A canvas borrowed from a consumer source stays in their page untouched.
+   * Drops the capture canvas and any NV12 output, detaching the canvas only if
+   * we created it. A canvas borrowed from a consumer source stays in their page
+   * untouched.
    */
-  private releaseCanvas(): void {
+  private releaseCapture(): void {
+    this.nv12Output = undefined;
     this.surface?.release();
     this.surface = undefined;
   }
@@ -915,6 +970,10 @@ export class MediaMockClass {
       : createSyntheticStream(tracks);
     this.ownStreams.add(this.currentStream);
 
+    if (this.debug) {
+      this.showFrameStats();
+    }
+
     return this.currentStream;
   }
 
@@ -971,20 +1030,36 @@ export class MediaMockClass {
     }
     const source = this.source as FrameSource;
 
-    this.releaseCanvas();
-
     const requested = resolveResolution(
       constraints,
       this.state.device.videoResolutions,
       isPortraitViewport(),
     );
 
+    this.releaseCapture();
+
+    // A canvas the consumer renders has no paint step to convert, so it is
+    // always captured.
+    const output =
+      this.state.frameOutput === FrameOutput.VideoFrameNV12 &&
+      !source.captureCanvas
+        ? openNv12Output(requested, this.fps)
+        : null;
+    this.nv12Output = output ?? undefined;
+
     this.surface = CaptureSurface.forSource(
       source,
       requested,
       this.mediaMockCanvasId,
+      { willReadFrequently: output !== null },
     );
     this.resolution = this.surface.resolution;
+
+    if (this.debug) {
+      console.log(
+        `media-mock: frames are ${output ? "NV12 VideoFrames from a track generator" : "captured from a canvas"}`,
+      );
+    }
 
     if (this.surface.owned) {
       this.startDrawingLoop();
@@ -999,13 +1074,12 @@ export class MediaMockClass {
     }
 
     if (this.debug) {
-      this.enableDebugMode();
+      this.showDebugElements();
     }
 
-    // For the captureStream, we use the fps parameter directly
-    const canvasStream = this.surface.canvas.captureStream(this.fps);
-
-    const videoTracks = canvasStream?.getVideoTracks() ?? [];
+    const videoTracks = output
+      ? [output.track]
+      : (this.surface.canvas.captureStream(this.fps)?.getVideoTracks() ?? []);
 
     for (const track of videoTracks) {
       decorateVideoTrack(track, {
@@ -1024,6 +1098,7 @@ export * from "./createMediaDeviceInfo";
 export {
   type DeviceConfig,
   devices,
+  FrameOutput,
   type FrameSource,
   type GetUserMediaErrorName,
   type SimulatedErrorOptions,

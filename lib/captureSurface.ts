@@ -39,18 +39,25 @@ export class CaptureSurface {
    * WebKit 26-class engine under xvfb) a detached canvas yields a track whose
    * videoWidth/videoHeight briefly report valid values and then drop to 2x2,
    * breaking `<video>` consumers.
+   *
+   * `willReadFrequently` suits a canvas that is read back every frame rather
+   * than captured, as NV12 output does.
    */
-  static create(resolution: Resolution, canvasId: string): CaptureSurface {
+  static create(
+    resolution: Resolution,
+    canvasId: string,
+    { willReadFrequently = false } = {},
+  ): CaptureSurface {
     const canvas = document.createElement("canvas");
     canvas.id = canvasId;
     canvas.width = resolution.width;
     canvas.height = resolution.height;
 
-    // No willReadFrequently: it keeps the canvas on the CPU. At 4K on a Galaxy
-    // M53 in Chrome, a WebGL consumer received 12-18% fewer frames with it and
-    // waited about three times as long for each (#81). The only readback is
-    // commitPixels(), once per start, which does not call for it.
-    const ctx = canvas.getContext("2d");
+    // Not for a captured canvas: willReadFrequently keeps it on the CPU. At 4K
+    // on a Galaxy M53 in Chrome, a WebGL consumer received 12-18% fewer frames
+    // with it and waited about three times as long for each (#81). The only
+    // readback there is commitPixels(), once per start.
+    const ctx = canvas.getContext("2d", { willReadFrequently });
     if (!ctx) {
       // A DOM emulator (happy-dom, jsdom) returns null here: it has no
       // rasteriser, so no frames can ever be painted. Name the way out.
@@ -79,10 +86,11 @@ export class CaptureSurface {
     source: FrameSource,
     resolution: Resolution,
     canvasId: string,
+    options?: { willReadFrequently?: boolean },
   ): CaptureSurface {
     return source.captureCanvas
       ? CaptureSurface.borrow(source.captureCanvas)
-      : CaptureSurface.create(resolution, canvasId);
+      : CaptureSurface.create(resolution, canvasId, options);
   }
 
   /**
