@@ -14,7 +14,9 @@ concurrency: ${{ github.workflow }}-${{ github.ref }}
 jobs:
   # Job for testing and coverage report
   test:
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest is 26.04, which Playwright 1.60 refuses to install
+    # browsers on. Unpin once the installed Playwright supports it.
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
