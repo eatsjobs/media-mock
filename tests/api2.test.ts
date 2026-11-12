@@ -2,6 +2,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
   createMediaMock,
   devices,
+  FrameOutput,
   MediaMock,
   MediaMockClass,
   TimerMode,
@@ -16,6 +17,7 @@ describe("2.0 API surface", () => {
       canvasScaleFactor: 1,
       mediaTimeout: 60_000,
       timerMode: TimerMode.SetInterval,
+      frameOutput: FrameOutput.Canvas,
     });
   });
 
@@ -29,12 +31,24 @@ describe("2.0 API surface", () => {
         canvasScaleFactor: 0.5,
         mediaTimeout: 1234,
         timerMode: TimerMode.Raf,
+        frameOutput: FrameOutput.VideoFrameNV12,
       });
 
       expect(returned).toBe(MediaMock);
       expect(MediaMock.settings.canvasScaleFactor).toBe(0.5);
       expect(MediaMock.settings.mediaTimeout).toBe(1234);
       expect(MediaMock.settings.timerMode).toBe(TimerMode.Raf);
+      expect(MediaMock.settings.frameOutput).toBe(FrameOutput.VideoFrameNV12);
+    });
+
+    it("should default to canvas frame output", () => {
+      expect(createMediaMock().settings.frameOutput).toBe(FrameOutput.Canvas);
+    });
+
+    it("should reject an unknown frame output", () => {
+      expect(() =>
+        MediaMock.configure({ frameOutput: "I420" as FrameOutput }),
+      ).toThrow(/frameOutput/);
     });
 
     it("should leave omitted options untouched", () => {

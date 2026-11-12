@@ -23,6 +23,7 @@ Can also be used as browser extension please have a look at this repo [https://g
   - [Configuring a Custom Device and Constraints](#configuring-a-custom-device-and-constraints)
   - [Configuring Media Load Timeout](#configuring-media-load-timeout)
   - [Controlling the Drawing Timer (headless/CI)](#controlling-the-drawing-timer-headlessci)
+  - [Delivering YUV frames like a real camera](#delivering-yuv-frames-like-a-real-camera)
   - [Streaming Your Own Canvas (3D scenes)](#streaming-your-own-canvas-3d-scenes)
   - [Audio](#audio)
   - [Constraints the device cannot meet](#constraints-the-device-cannot-meet)
@@ -34,6 +35,7 @@ Can also be used as browser extension please have a look at this repo [https://g
   - [MediaMock](#mediamock)
   - [createMediaMock](#createmediamock)
   - [TimerMode](#timermode)
+  - [FrameOutput](#frameoutput)
   - [GetUserMediaErrorName](#getusermediaerrorname)
   - [createMediaDeviceInfo](#createmediadeviceinfo)
   - [Settings and ConfigurableSettings](#settings)
@@ -190,6 +192,33 @@ MediaMock
 
 await MediaMock.setSource("./assets/640x480-sample.png");
 ```
+
+## Delivering YUV frames like a real camera
+
+A real camera delivers YUV frames (NV12 or I420); a canvas captured with `captureStream()` delivers BGRA. Code that reads frames through WebCodecs — `new VideoFrame(video)`, then `copyTo()` — therefore takes a different, slower path under the mock than with a real camera, and a benchmark run against the mock measures the wrong thing. Opt in to NV12 output to close that gap:
+
+```typescript
+import { FrameOutput, MediaMock, devices } from "@eatsjobs/media-mock";
+
+MediaMock
+  .configure({ frameOutput: FrameOutput.VideoFrameNV12 })
+  .mock(devices["Samsung Galaxy M53"]);
+
+await MediaMock.setSource("./assets/barcode.png");
+const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+// new VideoFrame(video).format === "NV12"
+```
+
+The source is still painted onto MediaMock's canvas, then converted to NV12 (BT.601, limited range, as most cameras deliver) and written to a `MediaStreamTrackGenerator`. A still image is converted once and the same frame emitted at the requested rate; a video or a custom `FrameSource` is converted on every frame, on the main thread, which gets costly at large resolutions.
+
+Which output a stream gets:
+
+- **Chrome and Edge** — NV12.
+- **Safari and Firefox** — canvas capture, as before. Safari's `VideoTrackGenerator` is deliberately not used: in Safari 27.2 a `<video>` playing its track keeps presenting the first frame to `drawImage` and `new VideoFrame(video)`, whatever is written after it.
+- **A canvas you render yourself** (`setSource(canvas)`) — always captured, since there is no paint step to convert.
+- **Odd frame sizes** — canvas capture: NV12 needs an even width and height.
+
+The setting is read by the next `getUserMedia` call. Debug mode shows which output a stream actually got — see [Debugging](#debugging).
 
 ## Streaming Your Own Canvas (3D scenes)
 
@@ -542,6 +571,7 @@ MediaMock.configure({
   canvasScaleFactor: 0.8,          // clamped to a minimum of 0.1
   mediaTimeout: 30_000,            // must be positive
   timerMode: TimerMode.SetInterval,
+  frameOutput: FrameOutput.Canvas, // or FrameOutput.VideoFrameNV12
 });
 ```
 
@@ -629,6 +659,22 @@ enum TimerMode {
 - **`Auto`** - Uses `setInterval` when `requestAnimationFrame` may be throttled (detected via `document.hidden`), otherwise `requestAnimationFrame`.
 - **`Raf`** - Always uses `requestAnimationFrame`.
 - **`SetInterval`** - Always uses `setInterval`. **Default.** Most reliable in headless / virtual-display environments (e.g. `xvfb`), where `requestAnimationFrame` may be throttled and `captureStream` stops emitting frames.
+
+---
+
+### `FrameOutput`
+
+Enum choosing how the mocked camera's frames reach the page. Set it via [`configure()`](#configureoptions-configurablesettings-mediamock).
+
+```typescript
+enum FrameOutput {
+  Canvas = "canvas",
+  VideoFrameNV12 = "videoFrameNV12",
+}
+```
+
+- **`Canvas`** - Paints a canvas and captures it with `captureStream()`. Frames arrive as BGRA. **Default.**
+- **`VideoFrameNV12`** - Writes NV12 `VideoFrame`s into a `MediaStreamTrackGenerator`, as a real camera delivers them. Chrome and Edge; falls back to `Canvas` elsewhere. See [Delivering YUV frames like a real camera](#delivering-yuv-frames-like-a-real-camera).
 
 ---
 
@@ -728,14 +774,16 @@ The shape of `MediaMock.settings`, which is a **read-only** snapshot — see [`s
 - **canvasScaleFactor**: `number` - Scale factor for the image in the canvas, clamped to a minimum of 0.1. Configurable.
 - **mediaTimeout**: `number` - Timeout for media loading in milliseconds (default: 60000 = 60 seconds). Applied to both images and videos. Must be positive. Configurable.
 - **timerMode**: `TimerMode` - Timer strategy for the canvas drawing loop (default: `TimerMode.SetInterval`). See [TimerMode](#timermode). Configurable.
+- **frameOutput**: `FrameOutput` - How frames reach the page (default: `FrameOutput.Canvas`). Read by the next `getUserMedia` call. See [FrameOutput](#frameoutput). Configurable.
 
-The three marked *configurable* are the members of `ConfigurableSettings`, the argument to `configure()`:
+The four marked *configurable* are the members of `ConfigurableSettings`, the argument to `configure()`:
 
 ```typescript
 interface ConfigurableSettings {
   canvasScaleFactor?: number;
   mediaTimeout?: number;
   timerMode?: TimerMode;
+  frameOutput?: FrameOutput;
 }
 ```
 
@@ -912,7 +960,7 @@ scratch.getContext("2d").drawImage(video, 0, 0);
 
 ### Debugging
 
-`enableDebugMode()` appends the canvas and the loaded image used by the canvas to the document.body.
+`enableDebugMode()` appends the canvas and the loaded image used by the canvas to the document.body. Once a stream is live, a thumbnail in the bottom-right corner plays it and shows the format and rate of the frames it delivers, read the way a consumer reads them — `NV12 · 30 fps` with [NV12 output](#delivering-yuv-frames-like-a-real-camera), `BGRA · 30 fps` with canvas capture.
 
 ```typescript
 

@@ -106,6 +106,8 @@ The library creates video streams by:
 2. Using `canvas.captureStream()` to create a `MediaStream`
 3. Handling both static images and video files as sources
 
+With `frameOutput: FrameOutput.VideoFrameNV12` (`lib/frameOutput.ts`), step 2 is replaced: the painted canvas is read back, converted to NV12 (`lib/nv12.ts`) and written to a `MediaStreamTrackGenerator`. Chrome/Edge only — Safari's `VideoTrackGenerator` freezes `<video>` readback on the first frame (checked in Safari 27.2), so everything else falls back to `captureStream()`.
+
 ### Device Orientation Handling
 
 The `getResolution()` method in `lib/main.ts:463` handles device orientation by:
