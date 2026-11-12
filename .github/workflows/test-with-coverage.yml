@@ -7,7 +7,9 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest is 26.04, which Playwright 1.60 refuses to install
+    # browsers on. Unpin once the installed Playwright supports it.
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         node-version: [22, 24]
