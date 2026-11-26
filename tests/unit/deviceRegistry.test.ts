@@ -128,14 +128,14 @@ describe("selectVideoDevice", () => {
 
 describe("listDevices", () => {
   it("should return the devices as configured", () => {
-    const listed = listDevices(config(), { redacted: false });
+    const listed = listDevices(config(), { camera: false, microphone: false });
     expect(listed).toHaveLength(4);
     expect(listed[0].label).toBe("Front Camera");
     expect(listed[0].deviceId).toBe("front-1");
   });
 
   it("should blank identifying fields when redacted, keeping kind", () => {
-    const listed = listDevices(config(), { redacted: true });
+    const listed = listDevices(config(), { camera: true, microphone: true });
 
     expect(listed).toHaveLength(4);
     for (const device of listed) {
@@ -151,9 +151,47 @@ describe("listDevices", () => {
     ]);
   });
 
+  it("should redact only the kinds whose permission is missing", () => {
+    const speaker = createMediaDeviceInfo({
+      deviceId: "out-1",
+      groupId: "group-mic",
+      kind: "audiooutput",
+      label: "Speaker",
+    });
+    const withSpeaker = {
+      ...config(),
+      mediaDeviceInfo: [frontCamera, microphone, speaker],
+    };
+
+    const camerasHidden = listDevices(withSpeaker, {
+      camera: true,
+      microphone: false,
+    });
+    expect(camerasHidden.map((d) => d.label)).toEqual([
+      "",
+      "Microphone",
+      "Speaker",
+    ]);
+
+    const microphonesHidden = listDevices(withSpeaker, {
+      camera: false,
+      microphone: true,
+    });
+    expect(microphonesHidden.map((d) => d.label)).toEqual([
+      "Front Camera",
+      "",
+      "",
+    ]);
+    expect(microphonesHidden.map((d) => d.kind)).toEqual([
+      "videoinput",
+      "audioinput",
+      "audiooutput",
+    ]);
+  });
+
   it("should not mutate the config when redacting", () => {
     const original = config();
-    listDevices(original, { redacted: true });
+    listDevices(original, { camera: true, microphone: true });
     expect(original.mediaDeviceInfo[0].label).toBe("Front Camera");
   });
 });

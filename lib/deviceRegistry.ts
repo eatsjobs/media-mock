@@ -101,14 +101,18 @@ export function selectAudioDevice(
 /**
  * The list `enumerateDevices()` should resolve with.
  *
- * When redacted, entries keep their `kind` but lose `label`, `deviceId` and
- * `groupId` — what real browsers report before camera permission is granted.
+ * Redacted entries keep their `kind` but lose `label`, `deviceId` and
+ * `groupId` — what real browsers report before permission is granted. Each
+ * kind follows its own permission: cameras follow `camera`; microphones and
+ * speakers follow `microphone`.
  */
 export function listDevices(
   config: DeviceConfig,
-  { redacted }: { redacted: boolean },
+  redact: { camera: boolean; microphone: boolean },
 ): MockMediaDeviceInfo[] {
-  return redacted
-    ? config.mediaDeviceInfo.map(redactMediaDeviceInfo)
-    : config.mediaDeviceInfo;
+  return config.mediaDeviceInfo.map((device) =>
+    (device.kind === "videoinput" ? redact.camera : redact.microphone)
+      ? redactMediaDeviceInfo(device)
+      : device,
+  );
 }
