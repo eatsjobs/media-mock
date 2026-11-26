@@ -48,6 +48,7 @@ import {
   type MediaPermissionName,
   PERMISSION_STATES,
   PermissionController,
+  type PermissionOutcome,
   type PermissionPrompt,
   type PermissionPromptAnswer,
 } from "./permissions";
@@ -259,6 +260,25 @@ function canPaintFrames(): boolean {
 const FRAMELESS_HINT =
   "This environment cannot paint frames — call mock(device, { frames: false }) " +
   "to stream a track that carries the camera's identity without pixels.";
+
+/** The rejection for a permission step that did not end in a grant. */
+function permissionFailure(
+  outcome: Exclude<PermissionOutcome, "granted">,
+): Error {
+  switch (outcome) {
+    case "denied":
+      return createGetUserMediaError("NotAllowedError");
+    case "dismissed":
+      // Chromium's wording when the prompt is closed without a decision.
+      return createGetUserMediaError("NotAllowedError", {
+        message: "Permission dismissed",
+      });
+    case "aborted":
+      return createGetUserMediaError("AbortError", {
+        message: "getUserMedia was aborted because the mock was removed",
+      });
+  }
+}
 
 /**
  * Every track on a stream. `getTracks()` is absent on happy-dom's MediaStream
@@ -948,6 +968,45 @@ export class MediaMockClass {
   }
 
   /**
+   * Resolves when a permission prompt is open — immediately if one already
+   * is — with which permissions it asks for. Plain data, so it can be
+   * returned from Playwright's `page.evaluate`.
+   *
+   * @example
+   * ```ts
+   * MediaMock.setPermissionState("camera", "prompt");
+   * const pending = navigator.mediaDevices.getUserMedia({ video: true });
+   * await MediaMock.waitForPermissionPrompt(); // { camera: true, microphone: false }
+   * MediaMock.answerPermissionPrompt("allow");
+   * const stream = await pending;
+   * ```
+   *
+   * @public
+   * @returns {Promise<PermissionPrompt>}
+   */
+  public waitForPermissionPrompt(): Promise<PermissionPrompt> {
+    return this.permissions.waitForPrompt();
+  }
+
+  /**
+   * Answers the open permission prompt as the user would. `"allow"` grants
+   * the prompted permissions and the waiting `getUserMedia` streams;
+   * `"deny"` denies them and it rejects with NotAllowedError; `"dismiss"`
+   * closes the prompt without a decision, rejecting with NotAllowedError
+   * and leaving the state at `"prompt"`.
+   *
+   * Throws if no prompt is open: an answer is never saved for later.
+   *
+   * @public
+   * @param {PermissionPromptAnswer} answer - "allow", "deny" or "dismiss"
+   * @returns {this}
+   */
+  public answerPermissionPrompt(answer: PermissionPromptAnswer): this {
+    this.permissions.answer(answer);
+    return this;
+  }
+
+  /**
    * The state `navigator.permissions.query` reports: "denied" while a
    * NotAllowedError is simulated — the same "as if denied" view that redacts
    * enumerateDevices — and the stored state otherwise.
@@ -988,6 +1047,34 @@ export class MediaMockClass {
     });
   }
 
+  /**
+   * The error for a request device selection refused, after the spec's
+   * "getUserMedia specific failure is allowed" check: a page denied any
+   * requested kind learns nothing about the hardware, only NotAllowedError.
+   * An OverconstrainedError names its constraint only once device
+   * information may be exposed — here, once either permission is granted.
+   */
+  private selectionFailure(
+    name: "NotFoundError" | "OverconstrainedError",
+    kinds: PermissionPrompt,
+    constraint = "",
+  ): Error {
+    const deniedKind = MEDIA_PERMISSION_NAMES.some(
+      (permission) =>
+        kinds[permission] && this.permissions.state(permission) === "denied",
+    );
+    if (deniedKind) {
+      return createGetUserMediaError("NotAllowedError");
+    }
+
+    const canExposeDeviceInfo = MEDIA_PERMISSION_NAMES.some(
+      (permission) => this.permissions.state(permission) === "granted",
+    );
+    return createGetUserMediaError(name, {
+      constraint: canExposeDeviceInfo ? constraint : "",
+    });
+  }
+
   private async getMockStream(
     constraints: MediaStreamConstraints,
   ): Promise<MediaStream> {
@@ -1024,14 +1111,18 @@ export class MediaMockClass {
     // A runtime with no Web Audio cannot produce an audio track at all, which
     // is indistinguishable from having no microphone: refuse up front rather
     // than build the video half and hand back a partial stream.
+    const kinds: PermissionPrompt = {
+      camera: wantsVideo,
+      microphone: wantsAudio,
+    };
     if (
       wantsAudio &&
       (!audioDevice || !this.produceAudio || !Microphone.isSupported())
     ) {
-      throw createGetUserMediaError("NotFoundError");
+      throw this.selectionFailure("NotFoundError", kinds);
     }
     if (wantsVideo && !videoDevice) {
-      throw createGetUserMediaError("NotFoundError");
+      throw this.selectionFailure("NotFoundError", kinds);
     }
 
     // Refuse before building anything, so a rejected request leaves no canvas
@@ -1043,15 +1134,20 @@ export class MediaMockClass {
       supportedConstraints: this.state.constraints,
     });
     if (unsatisfiable) {
-      throw createGetUserMediaError("OverconstrainedError", {
-        constraint: unsatisfiable,
-      });
+      throw this.selectionFailure("OverconstrainedError", kinds, unsatisfiable);
     }
 
     // Before any media is loaded, so an environment that can never paint fails
     // immediately rather than after the media timeout.
     if (wantsVideo && this.produceFrames && !canPaintFrames()) {
       throw new Error(`Cannot capture video frames. ${FRAMELESS_HINT}`);
+    }
+
+    // The permission request comes after device selection, as in the spec.
+    // With a prompt open this waits until the test answers it.
+    const outcome = await this.permissions.request(kinds);
+    if (outcome !== "granted") {
+      throw permissionFailure(outcome);
     }
 
     const tracks: MediaStreamTrack[] = [];
