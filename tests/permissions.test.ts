@@ -137,6 +137,33 @@ describe("permission prompt in a real browser", () => {
     expect(ended).toBe(1);
   });
 
+  it("unmock right after allow aborts the call and leaves no canvas behind", async () => {
+    MediaMock.mock(devices["iPhone 12"]);
+    await MediaMock.setSource(imageUrl);
+    MediaMock.setPermissionState("camera", "prompt");
+    const pending = navigator.mediaDevices.getUserMedia({ video: true });
+    await MediaMock.waitForPermissionPrompt();
+
+    MediaMock.answerPermissionPrompt("allow");
+    MediaMock.unmock();
+
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(document.getElementById("media-mock-canvas")).toBeNull();
+  });
+
+  it("unmock while the source is still loading aborts the call and leaves no canvas behind", async () => {
+    MediaMock.mock(devices["iPhone 12"]);
+    void MediaMock.setSource(imageUrl);
+    const pending = navigator.mediaDevices.getUserMedia({ video: true });
+
+    MediaMock.unmock();
+
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(document.getElementById("media-mock-canvas")).toBeNull();
+  });
+
   it("deny and dismiss reject with the expected messages", async () => {
     MediaMock.mock(devices["iPhone 12"]);
     await MediaMock.setSource(imageUrl);

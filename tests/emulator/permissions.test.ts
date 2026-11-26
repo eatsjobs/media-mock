@@ -378,6 +378,22 @@ describe("the permission prompt", () => {
     );
   });
 
+  it("unmock right after allow aborts the call instead of streaming", async () => {
+    mock.mock(devices["iPhone 12"], frameless);
+    mock.setPermissionState("camera", "prompt");
+    const pending = navigator.mediaDevices.getUserMedia(camera);
+    await mock.waitForPermissionPrompt();
+
+    mock.answerPermissionPrompt("allow");
+    mock.unmock();
+
+    const error = await rejection(pending);
+    expect(error.name).toBe("AbortError");
+    expect(error.message).toBe(
+      "getUserMedia was aborted because the mock was removed",
+    );
+  });
+
   it("denied turns NotFoundError into NotAllowedError", async () => {
     // With audio: false the emulator has no microphone to give.
     mock.mock(devices["iPhone 12"], frameless);

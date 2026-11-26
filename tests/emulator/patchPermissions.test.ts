@@ -151,6 +151,38 @@ describe("PermissionsPatcher", () => {
     expect(navigator.permissions?.query).toBe(nativeQuery);
   });
 
+  it("overlapping patchers restored out of order keep query working and restore the native at the end", async () => {
+    const before = navigator.permissions;
+    const nativeQuery = before?.query;
+    const other = new PermissionsPatcher();
+    const otherStates: Record<MediaPermissionName, PermissionState> = {
+      camera: "denied",
+      microphone: "granted",
+    };
+    states.camera = "prompt";
+
+    patcher.install(read);
+    other.install((name) => otherStates[name]);
+    // The last to install answers.
+    expect((await query("camera")).state).toBe("denied");
+
+    // The first leaves while the second is still mocking.
+    patcher.restore();
+    expect((await query("camera")).state).toBe("denied");
+    if (before === undefined) {
+      await expect(query("geolocation")).rejects.toThrow(TypeError);
+    } else {
+      await expect(query("geolocation")).resolves.toBeDefined();
+    }
+
+    other.restore();
+    if (before === undefined) {
+      expect(navigator.permissions).toBeUndefined();
+    } else {
+      expect(navigator.permissions.query).toBe(nativeQuery);
+    }
+  });
+
   it("reports whether it is installed", () => {
     expect(patcher.installed).toBe(false);
     patcher.install(read);

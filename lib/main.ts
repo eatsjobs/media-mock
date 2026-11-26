@@ -436,6 +436,13 @@ export class MediaMockClass {
    */
   private readonly liveTracks = new Set<MediaStreamTrack>();
 
+  /**
+   * Bumped by every `unmock()`. A `getUserMedia` call that was waiting when
+   * the mock went away sees a different value once it resumes, and aborts
+   * instead of building a stream after teardown.
+   */
+  private generation = 0;
+
   constructor() {
     // Every state change reaches the `PermissionStatus` objects handed out.
     // Lives as long as the instance; the patcher ignores it while unmocked.
@@ -826,6 +833,7 @@ export class MediaMockClass {
     this.disableDebugMode();
     this.mockedVideoTracksHandler = (tracks) => tracks;
     this.simulatedGetUserMediaError = null;
+    this.generation++;
     this.permissions.reset();
     this.permissionsPatcher.restore();
     this.liveTracks.clear();
@@ -1169,9 +1177,14 @@ export class MediaMockClass {
 
     // The permission request comes after device selection, as in the spec.
     // With a prompt open this waits until the test answers it.
+    const generation = this.generation;
     const outcome = await this.permissions.request(kinds);
     if (outcome !== "granted") {
       throw permissionFailure(outcome);
+    }
+    // Granted, but the mock may have gone between the answer and now.
+    if (this.generation !== generation) {
+      throw permissionFailure("aborted");
     }
 
     const tracks: MediaStreamTrack[] = [];
@@ -1254,6 +1267,7 @@ export class MediaMockClass {
     videoDevice: MockMediaDeviceInfo | undefined,
   ): Promise<MediaStreamTrack[]> {
     this.fps = extractFrameRate(constraints);
+    const generation = this.generation;
 
     // A setSource() still in flight decides what to stream. Without this wait,
     // a caller who did not await it would race: the source is only assigned once
@@ -1269,6 +1283,12 @@ export class MediaMockClass {
     // explicit setSource() call.
     if (!this.source) {
       await this.setSource(this.state.mediaURL);
+    }
+
+    // unmock() while media was loading: building a canvas and a drawing loop
+    // now would leak them past teardown, into whatever test runs next.
+    if (this.generation !== generation) {
+      throw permissionFailure("aborted");
     }
     const source = this.source as FrameSource;
 
