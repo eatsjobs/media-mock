@@ -61,7 +61,12 @@ import {
   createSyntheticStream,
   createSyntheticVideoTrack,
 } from "./syntheticStream";
-import { decorateAudioTrack, decorateVideoTrack, endTrack } from "./track";
+import {
+  decorateAudioTrack,
+  decorateVideoTrack,
+  endTrack,
+  trackEndedListeners,
+} from "./track";
 import { VideoFrameCallbackDriver } from "./videoFrameCallback";
 
 export interface MockOptions {
@@ -1238,6 +1243,9 @@ export class MediaMockClass {
       : createSyntheticStream(tracks);
     this.ownStreams.add(this.currentStream);
     for (const track of tracks) {
+      // Before the app gets the track, so revocation can reach its listeners
+      // even in Firefox.
+      trackEndedListeners(track);
       this.liveTracks.add(track);
       track.addEventListener(
         "ended",

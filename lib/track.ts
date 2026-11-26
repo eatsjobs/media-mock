@@ -252,11 +252,91 @@ function capabilitiesFromResolutions(
 }
 
 /**
+ * The `ended` listeners each mocked track was given through
+ * addEventListener, kept because Firefox never delivers a dispatched (script-
+ * created) event to them — only the `onended` handler runs. With this record,
+ * {@link endTrack} can still reach every listener exactly once.
+ */
+const endedListeners = new WeakMap<
+  MediaStreamTrack,
+  Set<EventListenerOrEventListenerObject>
+>();
+
+/**
+ * Starts recording the `ended` listeners added to `track`, by wrapping its
+ * addEventListener / removeEventListener. Other event types pass straight
+ * through. Call it before the track is handed to the app. Idempotent.
+ */
+export function trackEndedListeners(track: MediaStreamTrack): void {
+  if (endedListeners.has(track)) {
+    return;
+  }
+  const listeners = new Set<EventListenerOrEventListenerObject>();
+  endedListeners.set(track, listeners);
+
+  // EventTarget's signatures, which take a null listener as browsers do.
+  const add: EventTarget["addEventListener"] = track.addEventListener;
+  const remove: EventTarget["removeEventListener"] = track.removeEventListener;
+
+  Object.defineProperty(track, "addEventListener", {
+    value: function addEventListener(
+      this: MediaStreamTrack,
+      type: string,
+      listener: EventListenerOrEventListenerObject | null,
+      options?: boolean | AddEventListenerOptions,
+    ): void {
+      if (type === "ended" && listener) {
+        listeners.add(listener);
+        const signal = typeof options === "object" ? options.signal : undefined;
+        signal?.addEventListener("abort", () => listeners.delete(listener), {
+          once: true,
+        });
+      }
+      add.call(this, type, listener, options);
+    },
+    configurable: true,
+    writable: true,
+  });
+
+  Object.defineProperty(track, "removeEventListener", {
+    value: function removeEventListener(
+      this: MediaStreamTrack,
+      type: string,
+      listener: EventListenerOrEventListenerObject | null,
+      options?: boolean | EventListenerOptions,
+    ): void {
+      if (type === "ended" && listener) {
+        listeners.delete(listener);
+      }
+      remove.call(this, type, listener, options);
+    },
+    configurable: true,
+    writable: true,
+  });
+}
+
+/** Calls a recorded listener the way dispatch would: `this` is the track. */
+function invoke(
+  track: MediaStreamTrack,
+  listener: EventListenerOrEventListenerObject,
+  event: Event,
+): void {
+  if (typeof listener === "function") {
+    listener.call(track, event);
+  } else {
+    listener.handleEvent(event);
+  }
+}
+
+/**
  * Ends a track the way a user agent does when its source goes away (for
  * instance, a revoked permission): in a queued task, `readyState` becomes
  * "ended" and exactly one `ended` event fires. A real track's `stop()` fires
  * nothing, while the synthetic track's dispatches `ended` itself; either way
- * listeners hear it once. Does nothing to a track that has already ended.
+ * listeners hear it once. Where the engine does not deliver the dispatched
+ * event to addEventListener listeners (Firefox), the ones recorded by
+ * {@link trackEndedListeners} are called directly. Does nothing to a track
+ * that has already ended.
  */
 export function endTrack(track: MediaStreamTrack): void {
   setTimeout(() => {
@@ -271,9 +351,25 @@ export function endTrack(track: MediaStreamTrack): void {
     track.addEventListener("ended", onEnded, { once: true });
     track.stop();
     track.removeEventListener("ended", onEnded);
+    if (firedByStop) {
+      return;
+    }
 
-    if (!firedByStop) {
-      track.dispatchEvent(new Event("ended"));
+    // A probe tells whether this engine delivers the dispatched event to
+    // listeners; it is removed again before any direct delivery.
+    let delivered = false;
+    const probe = () => {
+      delivered = true;
+    };
+    const event = new Event("ended");
+    track.addEventListener("ended", probe);
+    track.dispatchEvent(event);
+    track.removeEventListener("ended", probe);
+
+    if (!delivered) {
+      for (const listener of [...(endedListeners.get(track) ?? [])]) {
+        invoke(track, listener, event);
+      }
     }
   }, 0);
 }

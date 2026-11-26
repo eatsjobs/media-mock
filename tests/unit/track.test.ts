@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { createMediaDeviceInfo } from "../../lib/createMediaDeviceInfo";
-import { decorateVideoTrack, endTrack } from "../../lib/track";
+import {
+  decorateVideoTrack,
+  endTrack,
+  trackEndedListeners,
+} from "../../lib/track";
 
 const backCamera = createMediaDeviceInfo({
   deviceId: "back-1",
@@ -423,5 +427,112 @@ describe("endTrack", () => {
     await nextTask();
 
     expect(ended).toBe(0);
+  });
+});
+
+/**
+ * What Firefox does with a dispatched event on a MediaStreamTrack: the
+ * `onended` handler runs, listeners added with addEventListener never do.
+ */
+class FirefoxLikeTrack extends FakeTrack {
+  onended: ((event: Event) => void) | null = null;
+
+  override dispatchEvent(event: Event): boolean {
+    if (event.type === "ended") {
+      this.onended?.(event);
+    }
+    return true;
+  }
+}
+
+describe("endTrack where dispatched events skip addEventListener (Firefox)", () => {
+  const nextTask = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it("still reaches listeners added with addEventListener, once each", async () => {
+    const track = new FirefoxLikeTrack(false);
+    trackEndedListeners(track as unknown as MediaStreamTrack);
+    let listener = 0;
+    let handler = 0;
+    let objectListener = 0;
+    track.addEventListener("ended", () => {
+      listener++;
+    });
+    track.addEventListener("ended", {
+      handleEvent: () => {
+        objectListener++;
+      },
+    });
+    track.onended = () => {
+      handler++;
+    };
+
+    endTrack(track as unknown as MediaStreamTrack);
+    await nextTask();
+
+    expect(track.readyState).toBe("ended");
+    expect({ listener, objectListener, handler }).toEqual({
+      listener: 1,
+      objectListener: 1,
+      handler: 1,
+    });
+  });
+
+  it("passes the ended event, with the track as this and target", async () => {
+    const track = new FirefoxLikeTrack(false);
+    trackEndedListeners(track as unknown as MediaStreamTrack);
+    let seen: { type?: string; self?: unknown } = {};
+    track.addEventListener("ended", function (this: unknown, event: Event) {
+      seen = { type: event.type, self: this };
+    });
+
+    endTrack(track as unknown as MediaStreamTrack);
+    await nextTask();
+
+    expect(seen).toEqual({ type: "ended", self: track });
+  });
+
+  it("skips listeners that were removed", async () => {
+    const track = new FirefoxLikeTrack(false);
+    trackEndedListeners(track as unknown as MediaStreamTrack);
+    let removed = 0;
+    const listener = () => {
+      removed++;
+    };
+    track.addEventListener("ended", listener);
+    track.removeEventListener("ended", listener);
+
+    endTrack(track as unknown as MediaStreamTrack);
+    await nextTask();
+
+    expect(removed).toBe(0);
+  });
+
+  it("delivers exactly once where the engine does deliver", async () => {
+    const track = new FakeTrack(false);
+    trackEndedListeners(track as unknown as MediaStreamTrack);
+    let listener = 0;
+    track.addEventListener("ended", () => {
+      listener++;
+    });
+
+    endTrack(track as unknown as MediaStreamTrack);
+    await nextTask();
+
+    expect(listener).toBe(1);
+  });
+
+  it("installing twice does not deliver twice", async () => {
+    const track = new FirefoxLikeTrack(false);
+    trackEndedListeners(track as unknown as MediaStreamTrack);
+    trackEndedListeners(track as unknown as MediaStreamTrack);
+    let listener = 0;
+    track.addEventListener("ended", () => {
+      listener++;
+    });
+
+    endTrack(track as unknown as MediaStreamTrack);
+    await nextTask();
+
+    expect(listener).toBe(1);
   });
 });
