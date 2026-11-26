@@ -30,6 +30,7 @@ Can also be used as browser extension please have a look at this repo [https://g
   - [Tuning a live track (zoom, torch, focus, exposure)](#tuning-a-live-track-zoom-torch-focus-exposure)
   - [Simulating Errors](#simulating-errors)
   - [Simulating the Permission Prompt](#simulating-the-permission-prompt)
+    - [Permission scenarios](#permission-scenarios)
   - [Creating Custom Mock Devices](#creating-custom-mock-devices)
 - [Migrating to 2.0](#migrating-to-20) · [full guide](./MIGRATION.md)
 - [API Documentation](#api-documentation)
@@ -511,6 +512,248 @@ await expect(page.getByText("Camera blocked")).toBeVisible();
 - **Simulated errors fire where the browser raises them.** A [`simulateGetUserMediaError`](#simulating-errors) of `NotReadableError` or `AbortError` fails only after the prompt is allowed; the others fail without one (see the table there). With `"NotAllowedError"`, `query` reports `"denied"` for both permissions until it is cleared.
 
 > **Changed in 2.6:** while mocked, `navigator.permissions.query` reports the mock's state for `camera` and `microphone` — `"granted"` by default — instead of the browser's. Pass `{ permissions: false }` to `mock()` to keep the native behaviour.
+
+### Permission scenarios
+
+Recipes for the flows a camera app has to handle. Each runs as-is in Vitest browser mode (with `MediaMock` and `devices` imported from `@eatsjobs/media-mock`); they are kept in [`tests/permissionScenarios.test.ts`](./tests/permissionScenarios.test.ts), so they stay in step with the library.
+
+#### First visit: the app explains, then asks
+
+Many apps check the permission before calling `getUserMedia`, to show their own explanation first. The status they hold hears the answer as a `change` event — listen before answering, as it can arrive before the stream does.
+
+```typescript
+MediaMock.mock(devices["iPhone 12"]).setPermissionState("camera", "prompt");
+
+// The app checks first, to show its own explainer before the browser prompt.
+const status = await navigator.permissions.query({
+  name: "camera" as PermissionName,
+});
+expect(status.state).toBe("prompt");
+
+const pending = navigator.mediaDevices.getUserMedia({ video: true });
+await MediaMock.waitForPermissionPrompt();
+
+const changed = new Promise((resolve) =>
+  status.addEventListener("change", resolve, { once: true }),
+);
+MediaMock.answerPermissionPrompt("allow");
+
+await expect(pending).resolves.toBeInstanceOf(MediaStream);
+await changed;
+expect(status.state).toBe("granted");
+```
+
+#### The user denies the prompt
+
+`getUserMedia` rejects, and the denial sticks: later requests fail at once, without a prompt.
+
+```typescript
+MediaMock.mock(devices["iPhone 12"]).setPermissionState("camera", "prompt");
+
+const pending = navigator.mediaDevices.getUserMedia({ video: true });
+await MediaMock.waitForPermissionPrompt();
+MediaMock.answerPermissionPrompt("deny");
+
+await expect(pending).rejects.toMatchObject({
+  name: "NotAllowedError",
+  message: "Permission denied",
+});
+
+// The browser remembers: asking again fails at once, with no prompt.
+await expect(
+  navigator.mediaDevices.getUserMedia({ video: true }),
+).rejects.toMatchObject({ name: "NotAllowedError" });
+```
+
+#### The user closes the prompt without choosing
+
+A dismissed prompt rejects too, but decides nothing, so the app can ask again.
+
+```typescript
+MediaMock.mock(devices["iPhone 12"]).setPermissionState("camera", "prompt");
+
+const pending = navigator.mediaDevices.getUserMedia({ video: true });
+await MediaMock.waitForPermissionPrompt();
+MediaMock.answerPermissionPrompt("dismiss");
+
+await expect(pending).rejects.toMatchObject({
+  name: "NotAllowedError",
+  message: "Permission dismissed",
+});
+
+// Nothing was decided, so a retry prompts again.
+const retry = navigator.mediaDevices.getUserMedia({ video: true });
+await MediaMock.waitForPermissionPrompt();
+MediaMock.answerPermissionPrompt("allow");
+await expect(retry).resolves.toBeInstanceOf(MediaStream);
+```
+
+#### A returning user who blocked the camera
+
+Start in `"denied"` to test the screen that tells users how to unblock the camera in their browser settings.
+
+```typescript
+MediaMock.mock(devices["iPhone 12"]).setPermissionState("camera", "denied");
+
+const status = await navigator.permissions.query({
+  name: "camera" as PermissionName,
+});
+expect(status.state).toBe("denied");
+
+// Cameras are listed, but without labels or ids.
+const [camera] = await navigator.mediaDevices.enumerateDevices();
+expect(camera.kind).toBe("videoinput");
+expect(camera.label).toBe("");
+
+await expect(
+  navigator.mediaDevices.getUserMedia({ video: true }),
+).rejects.toMatchObject({ name: "NotAllowedError" });
+```
+
+#### The user allows, but another app holds the camera
+
+A simulated `NotReadableError` fires only after the prompt is allowed — the order a real browser follows — and the permission stays granted.
+
+```typescript
+MediaMock.mock(devices["iPhone 12"])
+  .setPermissionState("camera", "prompt")
+  .simulateGetUserMediaError("NotReadableError", {
+    message: "Camera is in use by another app",
+  });
+
+const pending = navigator.mediaDevices.getUserMedia({ video: true });
+await MediaMock.waitForPermissionPrompt();
+MediaMock.answerPermissionPrompt("allow");
+
+await expect(pending).rejects.toMatchObject({
+  name: "NotReadableError",
+  message: "Camera is in use by another app",
+});
+
+// Access was granted; only the hardware failed.
+const status = await navigator.permissions.query({
+  name: "camera" as PermissionName,
+});
+expect(status.state).toBe("granted");
+```
+
+#### Camera and microphone together, microphone already allowed
+
+One request, one prompt, asking only for what is still undecided.
+
+```typescript
+// The microphone keeps its default, "granted".
+MediaMock.mock(devices["iPhone 12"]).setPermissionState("camera", "prompt");
+
+const pending = navigator.mediaDevices.getUserMedia({
+  video: true,
+  audio: true,
+});
+
+// One prompt, asking only for what is still undecided.
+expect(await MediaMock.waitForPermissionPrompt()).toEqual({
+  camera: true,
+  microphone: false,
+});
+MediaMock.answerPermissionPrompt("allow");
+
+const stream = await pending;
+expect(stream.getVideoTracks()).toHaveLength(1);
+expect(stream.getAudioTracks()).toHaveLength(1);
+```
+
+#### Access is revoked while the camera is live
+
+Revoking a granted permission ends the live tracks that needed it, each firing `ended`.
+
+```typescript
+MediaMock.mock(devices["iPhone 12"]);
+const [track] = (
+  await navigator.mediaDevices.getUserMedia({ video: true })
+).getVideoTracks();
+
+const ended = new Promise((resolve) =>
+  track.addEventListener("ended", resolve, { once: true }),
+);
+
+// The user blocks the camera from the browser's site settings.
+MediaMock.setPermissionState("camera", "denied");
+
+await ended;
+expect(track.readyState).toBe("ended");
+```
+
+#### The app asks twice at once (React StrictMode)
+
+Requests made while a prompt is open wait for it. After "allow", both resolve without a second prompt.
+
+```typescript
+MediaMock.mock(devices["iPhone 12"]).setPermissionState("camera", "prompt");
+
+const first = navigator.mediaDevices.getUserMedia({ video: true });
+const second = navigator.mediaDevices.getUserMedia({ video: true });
+
+// One prompt; the answer covers both requests.
+await MediaMock.waitForPermissionPrompt();
+MediaMock.answerPermissionPrompt("allow");
+
+await expect(Promise.all([first, second])).resolves.toHaveLength(2);
+```
+
+#### A test ends while the prompt is still open
+
+`unmock()` rejects the waiting call with `AbortError`, so nothing carries over into the next test.
+
+```typescript
+MediaMock.mock(devices["iPhone 12"]).setPermissionState("camera", "prompt");
+
+const pending = navigator.mediaDevices.getUserMedia({ video: true });
+await MediaMock.waitForPermissionPrompt();
+
+// In afterEach: the waiting call settles, so nothing leaks into the next test.
+MediaMock.unmock();
+
+await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+```
+
+#### End to end with Playwright
+
+The same flow against a real page. The UMD build is installed before the app's own scripts, so its very first `getUserMedia` meets the prompt; each step is its own `page.evaluate`, and the page is checked in between.
+
+```typescript
+import { expect, test } from "@playwright/test";
+
+declare global {
+  interface Window {
+    MediaMock: typeof import("@eatsjobs/media-mock");
+  }
+}
+
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript({
+    path: "node_modules/@eatsjobs/media-mock/dist/main.umd.js",
+  });
+  await page.addInitScript(() => {
+    const { MediaMock, devices } = window.MediaMock;
+    MediaMock.mock(devices["iPhone 12"]).setPermissionState("camera", "prompt");
+  });
+});
+
+test("explains while the prompt is open, then shows the blocked state", async ({ page }) => {
+  await page.goto("/scan");
+  await page.getByRole("button", { name: "Start camera" }).click();
+
+  await page.evaluate(() => window.MediaMock.MediaMock.waitForPermissionPrompt());
+  await expect(page.getByText("Allow camera access to scan")).toBeVisible();
+
+  await page.evaluate(() => {
+    window.MediaMock.MediaMock.answerPermissionPrompt("deny");
+  });
+  await expect(page.getByText("Camera access is blocked")).toBeVisible();
+});
+```
+
+`path` is resolved from the directory Playwright runs in; adjust it if your tests run from elsewhere.
 
 ## Creating Custom Mock Devices
 
