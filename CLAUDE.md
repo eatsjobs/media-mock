@@ -21,6 +21,7 @@ This is `@eatsjobs/media-mock`, a JavaScript library that simulates media device
 2. **Device orientation handling**: Automatically adjusts resolution based on device orientation (portrait/landscape)
 3. **Browser API mocking**: Replaces `navigator.mediaDevices` methods with mock implementations
 4. **Video track customization**: Supports custom handlers for video tracks via `setMockedVideoTracksHandler`
+5. **Permission prompt**: `lib/permissions.ts` (DOM-free state machine: states, prompt queue, answers) and `lib/patchPermissions.ts` (`navigator.permissions.query` for camera/microphone) back `setPermissionState`, `waitForPermissionPrompt` and `answerPermissionPrompt`. Device selection runs before the permission request, as in the spec.
 
 ### API Design Pattern
 

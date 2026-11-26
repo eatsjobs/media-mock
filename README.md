@@ -29,6 +29,7 @@ Can also be used as browser extension please have a look at this repo [https://g
   - [Constraints the device cannot meet](#constraints-the-device-cannot-meet)
   - [Tuning a live track (zoom, torch, focus, exposure)](#tuning-a-live-track-zoom-torch-focus-exposure)
   - [Simulating Errors](#simulating-errors)
+  - [Simulating the Permission Prompt](#simulating-the-permission-prompt)
   - [Creating Custom Mock Devices](#creating-custom-mock-devices)
 - [Migrating to 2.0](#migrating-to-20) · [full guide](./MIGRATION.md)
 - [API Documentation](#api-documentation)
@@ -37,6 +38,7 @@ Can also be used as browser extension please have a look at this repo [https://g
   - [TimerMode](#timermode)
   - [FrameOutput](#frameoutput)
   - [GetUserMediaErrorName](#getusermediaerrorname)
+  - [Permission types](#permission-types)
   - [createMediaDeviceInfo](#createmediadeviceinfo)
   - [Settings and ConfigurableSettings](#settings)
   - [MockOptions](#mockoptions)
@@ -59,6 +61,7 @@ Can also be used as browser extension please have a look at this repo [https://g
 - **Microphones**: Every preset exposes an `audioinput` (and, where the real device has one, an `audiooutput`). `getUserMedia({ audio: true })` returns a live, silent audio track carrying the emulated microphone's identity.
 - **Real Refusals**: Mandatory constraints (`exact`, `min`, `max`) the emulated device cannot meet are rejected with `OverconstrainedError`, naming the offending constraint — as a real camera does — instead of being quietly snapped to something else.
 - **Error Simulation**: Make `getUserMedia` reject with realistic errors (`NotAllowedError`, `NotFoundError`, `OverconstrainedError`, ...) to test permission-denied and no-camera paths.
+- **Permission Prompt**: Hold `getUserMedia` on a simulated camera/microphone prompt and answer it from the test — allow, deny or dismiss — with `navigator.permissions.query` reporting the state.
 - **Bring Your Own Canvas**: Stream a canvas you render into — a WebGL/Three.js 3D scene, or procedural frames via a custom `FrameSource`.
 - **Isolated Instances**: `createMediaMock()` gives each test file its own instance, so configuration and device state cannot leak between them.
 
@@ -436,7 +439,7 @@ MediaMock.simulateGetUserMediaError("OverconstrainedError", {
 
 ### enumerateDevices while permission is denied
 
-Real browsers do **not** reject `enumerateDevices()` when permission is missing — they resolve with redacted entries. While a `NotAllowedError` is simulated, the mock does the same: `kind` is preserved and `label`, `deviceId`, and `groupId` are empty strings.
+Real browsers do **not** reject `enumerateDevices()` when permission is missing — they resolve with redacted entries. The mock does the same: `kind` is preserved and `label`, `deviceId`, and `groupId` are empty strings. Each kind follows its own permission — cameras follow `camera`, microphones and speakers follow `microphone` — and is redacted while that permission is not `"granted"` (see [Simulating the Permission Prompt](#simulating-the-permission-prompt)) or while a `NotAllowedError` is simulated. Like Chromium, the mock shows labels as soon as permission is granted, without waiting for a stream.
 
 ```typescript
 MediaMock.simulateGetUserMediaError("NotAllowedError");
@@ -449,6 +452,61 @@ MediaMock.clearGetUserMediaError();
 ```
 
 Other error names leave `enumerateDevices()` untouched.
+
+## Simulating the Permission Prompt
+
+A real user meets a browser prompt the first time a page asks for the camera, and the app has to handle the moment while it is open as well as each answer. Set a permission to `"prompt"` and `getUserMedia` waits, just as it would in front of a person, until the test answers:
+
+```typescript
+import { MediaMock, devices } from "@eatsjobs/media-mock";
+
+MediaMock.mock(devices["iPhone 12"]).setPermissionState("camera", "prompt");
+
+const pending = navigator.mediaDevices.getUserMedia({ video: true });
+
+await MediaMock.waitForPermissionPrompt(); // { camera: true, microphone: false }
+// assert the app's "please allow camera access" UI here
+
+MediaMock.answerPermissionPrompt("allow"); // or "deny" / "dismiss"
+const stream = await pending;
+```
+
+| Answer | Prompted permissions become | The waiting `getUserMedia` |
+| --- | --- | --- |
+| `"allow"` | `"granted"` | resolves with the stream |
+| `"deny"` | `"denied"` | rejects with `NotAllowedError` ("Permission denied") |
+| `"dismiss"` | unchanged (`"prompt"`) | rejects with `NotAllowedError` ("Permission dismissed") |
+
+`navigator.permissions.query({ name: "camera" })` (and `"microphone"`) reports the mocked state, and every `PermissionStatus` it handed out fires `change` when the state moves — whether through `setPermissionState` or an answer. Other permission names reach the browser's own implementation.
+
+### With Playwright
+
+The test talks to the page through `page.evaluate`, which can only carry plain data — so waiting and answering are separate calls, and the app can be checked in between. Reach the mock the same way as for anything else, for example the [UMD global](#cdn) installed with `page.addInitScript`:
+
+```typescript
+await page.evaluate(() => window.MediaMock.MediaMock.setPermissionState("camera", "prompt"));
+await page.getByRole("button", { name: "Scan" }).click();
+
+await page.evaluate(() => window.MediaMock.MediaMock.waitForPermissionPrompt());
+await expect(page.getByText("Please allow camera access")).toBeVisible();
+
+await page.evaluate(() => { window.MediaMock.MediaMock.answerPermissionPrompt("deny"); });
+await expect(page.getByText("Camera blocked")).toBeVisible();
+```
+
+### The rules
+
+- **Default `"granted"`.** Without `setPermissionState`, nothing changes: `getUserMedia` streams straight away. `unmock()` puts both permissions back to `"granted"`.
+- **One prompt per request.** Camera and microphone requested together share one prompt, which asks only for the permissions still at `"prompt"`.
+- **One prompt at a time.** Calls made while a prompt is open wait in line and are re-checked once it is answered — after `"allow"`, a second camera request (React StrictMode's double effect, say) streams without prompting again.
+- **No answer without a prompt.** `answerPermissionPrompt` throws if no prompt is open, so a test cannot pass by answering a prompt the app never triggered.
+- **`"denied"` fails fast.** A request needing a denied permission rejects with `NotAllowedError` and no prompt. It also hides why a device could not be used: what would have been `NotFoundError` or `OverconstrainedError` is reported as `NotAllowedError`, as the specification requires.
+- **Device problems come first.** A request no device can serve is refused (`NotFoundError`, `OverconstrainedError`) before any prompt opens. Until a permission is granted, `OverconstrainedError.constraint` is `""`.
+- **Revoking ends tracks.** Moving a permission away from `"granted"` ends the live tracks that needed it, each firing one `ended` event — what browsers do when a site's camera access is withdrawn.
+- **`unmock()` settles everything.** A `getUserMedia` still waiting on a prompt rejects with `AbortError`, so nothing hangs into the next test.
+- **The simulated error stays first.** While [`simulateGetUserMediaError`](#simulating-errors) is set, `getUserMedia` rejects with it and no prompt opens; with `"NotAllowedError"`, `query` reports `"denied"` for both permissions until it is cleared.
+
+> **Changed in 2.6:** while mocked, `navigator.permissions.query` reports the mock's state for `camera` and `microphone` — `"granted"` by default — instead of the browser's. Pass `{ permissions: false }` to `mock()` to keep the native behaviour.
 
 ## Creating Custom Mock Devices
 
@@ -561,6 +619,18 @@ Makes every subsequent `getUserMedia` call reject with the given error instead o
 #### `clearGetUserMediaError(): MediaMock`
 
 Stops simulating a `getUserMedia` failure, so subsequent calls return a mock stream again and `enumerateDevices()` reports full device info.
+
+#### `setPermissionState(name: MediaPermissionName, state: PermissionState): MediaMock`
+
+Sets the `"camera"` or `"microphone"` permission to `"granted"`, `"denied"` or `"prompt"`. `navigator.permissions.query` reports it and live `PermissionStatus` objects fire `change`. Moving away from `"granted"` ends the live tracks that needed the permission. Throws `TypeError` on an unknown name or state. `unmock()` restores `"granted"` for both. See [Simulating the Permission Prompt](#simulating-the-permission-prompt).
+
+#### `waitForPermissionPrompt(): Promise<PermissionPrompt>`
+
+Resolves when a permission prompt is open — immediately if one already is — with which permissions it asks for, e.g. `{ camera: true, microphone: false }`. Plain data, so it can be returned from Playwright's `page.evaluate`. Rejects if `unmock()` is called while waiting.
+
+#### `answerPermissionPrompt(answer: PermissionPromptAnswer): MediaMock`
+
+Answers the open prompt as the user would: `"allow"`, `"deny"` or `"dismiss"`. Throws if no prompt is open — an answer is never saved for a later prompt — and `TypeError` on an unknown answer.
 
 #### `configure(options: ConfigurableSettings): MediaMock`
 
@@ -701,6 +771,22 @@ Rejections are `DOMException` instances carrying the requested `name`. `"Overcon
 
 ---
 
+### Permission types
+
+Used by [`setPermissionState`](#setpermissionstatename-mediapermissionname-state-permissionstate-mediamock), [`waitForPermissionPrompt`](#waitforpermissionprompt-promisepermissionprompt) and [`answerPermissionPrompt`](#answerpermissionpromptanswer-permissionpromptanswer-mediamock). `PermissionState` is the DOM's own `"granted" | "denied" | "prompt"`.
+
+```typescript
+type MediaPermissionName = "camera" | "microphone";
+type PermissionPromptAnswer = "allow" | "deny" | "dismiss";
+
+interface PermissionPrompt {
+  camera: boolean;
+  microphone: boolean;
+}
+```
+
+---
+
 ### `createMediaDeviceInfo`
 
 Factory for building a custom `MockMediaDeviceInfo`, suitable for `addMockDevice` or for assembling a custom [`DeviceConfig`](#deviceconfig).
@@ -754,6 +840,7 @@ interface MockOptions {
   frames?: boolean;
   audio?: boolean;
   emulateVideoFrameCallback?: boolean;
+  permissions?: boolean;
 }
 ```
 
@@ -763,6 +850,7 @@ interface MockOptions {
 - **frames**: `boolean` (default `true`) - Whether to paint real video frames. Needs a canvas with a 2D context and `captureStream()`, so set `false` in a DOM emulator. See [Unit testing without a browser](#unit-testing-without-a-browser).
 - **audio**: `boolean` (default `true`) - Whether to produce an audio track. Needs Web Audio; with `false`, a request for audio is refused with `NotFoundError`.
 - **emulateVideoFrameCallback**: `boolean` (default `false`) - Answer `requestVideoFrameCallback` and `readyState` for a `<video>` playing a mocked stream, which WebKit on Linux never does. Both are driven by frames that actually arrived, and both fall silent on a stalled stream. See [emulateVideoFrameCallback](#emulatevideoframecallback).
+- **permissions**: `boolean` (default `true`) - Replace `navigator.permissions.query` for `"camera"` and `"microphone"` so it reports the mock's state. With `false`, `query` is left native; `getUserMedia` still follows [`setPermissionState`](#setpermissionstatename-mediapermissionname-state-permissionstate-mediamock).
 
 ### `Settings`
 
@@ -840,7 +928,7 @@ track.getCapabilities().torch;  // true
 
 `navigator.mediaDevices` does not exist in these environments, so `mock()` installs one and `unmock()` removes it again — including the `navigator` object itself on Node below v21, which has none. The stream and its tracks satisfy `instanceof MediaStream` / `instanceof MediaStreamTrack` wherever the environment defines those interfaces. The track is live and fully described but carries no pixels; put a `<video>` in front of it and nothing will paint.
 
-**What works:** `enumerateDevices`, `getSupportedConstraints`, `getCapabilities`, device selection by `deviceId`/`facingMode`, constraint refusal (`OverconstrainedError`, `NotFoundError`, `TypeError`), error simulation, redaction while permission is denied, and `devicechange` events.
+**What works:** `enumerateDevices`, `getSupportedConstraints`, `getCapabilities`, device selection by `deviceId`/`facingMode`, constraint refusal (`OverconstrainedError`, `NotFoundError`, `TypeError`), error simulation, the permission prompt and `navigator.permissions.query` (a minimal `navigator.permissions` is installed under jsdom, which has none), redaction while permission is denied, and `devicechange` events.
 
 **What does not:** frames of any kind, audio tracks, and anything that loads media from a URL — an emulator has no server to fetch `./assets/frame.png` from. Use `setSource()` only in a real browser.
 
