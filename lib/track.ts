@@ -250,3 +250,30 @@ function capabilitiesFromResolutions(
     resizeMode: ["none", "crop-and-scale"],
   };
 }
+
+/**
+ * Ends a track the way a user agent does when its source goes away (for
+ * instance, a revoked permission): in a queued task, `readyState` becomes
+ * "ended" and exactly one `ended` event fires. A real track's `stop()` fires
+ * nothing, while the synthetic track's dispatches `ended` itself; either way
+ * listeners hear it once. Does nothing to a track that has already ended.
+ */
+export function endTrack(track: MediaStreamTrack): void {
+  setTimeout(() => {
+    if (track.readyState === "ended") {
+      return;
+    }
+
+    let firedByStop = false;
+    const onEnded = () => {
+      firedByStop = true;
+    };
+    track.addEventListener("ended", onEnded, { once: true });
+    track.stop();
+    track.removeEventListener("ended", onEnded);
+
+    if (!firedByStop) {
+      track.dispatchEvent(new Event("ended"));
+    }
+  }, 0);
+}

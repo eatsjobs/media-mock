@@ -61,7 +61,7 @@ import {
   createSyntheticStream,
   createSyntheticVideoTrack,
 } from "./syntheticStream";
-import { decorateAudioTrack, decorateVideoTrack } from "./track";
+import { decorateAudioTrack, decorateVideoTrack, endTrack } from "./track";
 import { VideoFrameCallbackDriver } from "./videoFrameCallback";
 
 export interface MockOptions {
@@ -428,6 +428,13 @@ export class MediaMockClass {
   private readonly permissions = new PermissionController();
 
   private readonly permissionsPatcher = new PermissionsPatcher();
+
+  /**
+   * Tracks this instance handed out that may still be live, so a revoked
+   * permission can end them. (`ownStreams` is a WeakSet and cannot be
+   * walked.)
+   */
+  private readonly liveTracks = new Set<MediaStreamTrack>();
 
   constructor() {
     // Every state change reaches the `PermissionStatus` objects handed out.
@@ -821,6 +828,7 @@ export class MediaMockClass {
     this.simulatedGetUserMediaError = null;
     this.permissions.reset();
     this.permissionsPatcher.restore();
+    this.liveTracks.clear();
     this.frameCallbacks.uninstall();
     this.readyState.uninstall();
     this.patcher.restoreAll();
@@ -963,8 +971,24 @@ export class MediaMockClass {
       );
     }
 
+    const wasGranted = this.permissions.state(name) === "granted";
     this.permissions.set(name, state);
+
+    // The spec's device permission revocation algorithm: every live track
+    // that needed this permission ends.
+    if (wasGranted && state !== "granted") {
+      this.endLiveTracks(name === "camera" ? "video" : "audio");
+    }
     return this;
+  }
+
+  private endLiveTracks(kind: "video" | "audio"): void {
+    for (const track of this.liveTracks) {
+      if (track.kind === kind) {
+        this.liveTracks.delete(track);
+        endTrack(track);
+      }
+    }
   }
 
   /**
@@ -1177,6 +1201,16 @@ export class MediaMockClass {
       ? new MediaStream(tracks)
       : createSyntheticStream(tracks);
     this.ownStreams.add(this.currentStream);
+    for (const track of tracks) {
+      this.liveTracks.add(track);
+      track.addEventListener(
+        "ended",
+        () => {
+          this.liveTracks.delete(track);
+        },
+        { once: true },
+      );
+    }
 
     if (this.debug) {
       this.showFrameStats();

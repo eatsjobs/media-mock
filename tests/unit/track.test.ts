@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createMediaDeviceInfo } from "../../lib/createMediaDeviceInfo";
-import { decorateVideoTrack } from "../../lib/track";
+import { decorateVideoTrack, endTrack } from "../../lib/track";
 
 const backCamera = createMediaDeviceInfo({
   deviceId: "back-1",
@@ -363,5 +363,65 @@ describe("decorateVideoTrack", () => {
     (track.getCapabilities() as { torch?: boolean }).torch = false;
 
     expect((track.getCapabilities() as { torch?: boolean }).torch).toBe(true);
+  });
+});
+
+/**
+ * A track whose `stop()` behaves like a real capture track's (no event) or
+ * like the synthetic track's (dispatches `ended` itself).
+ */
+class FakeTrack extends EventTarget {
+  readyState: MediaStreamTrackState = "live";
+
+  constructor(private readonly firesOnStop: boolean) {
+    super();
+  }
+
+  stop(): void {
+    if (this.readyState === "ended") {
+      return;
+    }
+    this.readyState = "ended";
+    if (this.firesOnStop) {
+      this.dispatchEvent(new Event("ended"));
+    }
+  }
+}
+
+describe("endTrack", () => {
+  const nextTask = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  for (const firesOnStop of [false, true]) {
+    const variant = firesOnStop ? "a synthetic track" : "a real capture track";
+
+    it(`ends ${variant} in a later task with exactly one ended event`, async () => {
+      const track = new FakeTrack(firesOnStop);
+      let ended = 0;
+      track.addEventListener("ended", () => {
+        ended++;
+      });
+
+      endTrack(track as unknown as MediaStreamTrack);
+      expect(track.readyState).toBe("live");
+
+      await nextTask();
+
+      expect(track.readyState).toBe("ended");
+      expect(ended).toBe(1);
+    });
+  }
+
+  it("does nothing to an already ended track", async () => {
+    const track = new FakeTrack(false);
+    track.stop();
+    let ended = 0;
+    track.addEventListener("ended", () => {
+      ended++;
+    });
+
+    endTrack(track as unknown as MediaStreamTrack);
+    await nextTask();
+
+    expect(ended).toBe(0);
   });
 });

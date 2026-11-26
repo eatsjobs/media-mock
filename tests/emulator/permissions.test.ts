@@ -428,3 +428,83 @@ describe("the permission prompt", () => {
     expect(await stillPending(mock.waitForPermissionPrompt())).toBe(true);
   });
 });
+
+describe("revoking a permission", () => {
+  const mock = createMediaMock();
+  const frameless = { frames: false, audio: false } as const;
+
+  const ended = (track: MediaStreamTrack) =>
+    new Promise<void>((resolve) =>
+      track.addEventListener("ended", () => resolve(), { once: true }),
+    );
+
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 10));
+
+  afterEach(() => {
+    mock.unmock();
+  });
+
+  it("revoking camera ends live video tracks", async () => {
+    mock.mock(devices["iPhone 12"], frameless);
+    const [track] = (
+      await navigator.mediaDevices.getUserMedia({ video: true })
+    ).getVideoTracks();
+    const listener = vi.fn();
+    track.addEventListener("ended", listener);
+
+    mock.setPermissionState("camera", "denied");
+    await ended(track);
+    await settle();
+
+    expect(track.readyState).toBe("ended");
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it("resetting camera to prompt also ends live video tracks", async () => {
+    mock.mock(devices["iPhone 12"], frameless);
+    const [track] = (
+      await navigator.mediaDevices.getUserMedia({ video: true })
+    ).getVideoTracks();
+
+    mock.setPermissionState("camera", "prompt");
+    await ended(track);
+
+    expect(track.readyState).toBe("ended");
+  });
+
+  it("revoking microphone leaves video tracks live", async () => {
+    mock.mock(devices["iPhone 12"], frameless);
+    const [track] = (
+      await navigator.mediaDevices.getUserMedia({ video: true })
+    ).getVideoTracks();
+
+    mock.setPermissionState("microphone", "denied");
+    await settle();
+
+    expect(track.readyState).toBe("live");
+  });
+
+  it("setting granted again does not end anything", async () => {
+    mock.mock(devices["iPhone 12"], frameless);
+    const [track] = (
+      await navigator.mediaDevices.getUserMedia({ video: true })
+    ).getVideoTracks();
+
+    mock.setPermissionState("camera", "granted");
+    await settle();
+
+    expect(track.readyState).toBe("live");
+  });
+
+  it("changing the state while a prompt is open does not answer it", async () => {
+    mock.mock(devices["iPhone 12"], frameless);
+    mock.setPermissionState("camera", "prompt");
+    const pending = navigator.mediaDevices.getUserMedia({ video: true });
+    await mock.waitForPermissionPrompt();
+
+    mock.setPermissionState("microphone", "denied");
+    mock.answerPermissionPrompt("allow");
+
+    await expect(pending).resolves.toBeDefined();
+  });
+});
