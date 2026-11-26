@@ -433,15 +433,102 @@ describe("the permission prompt", () => {
     expect(await stillPending(mock.waitForPermissionPrompt())).toBe(true);
   });
 
-  it("the simulated error still wins over the prompt", async () => {
+  it("a simulated SecurityError or NotAllowedError still fails before any prompt", async () => {
+    mock.mock(devices["iPhone 12"], frameless);
+    mock.setPermissionState("camera", "prompt");
+
+    for (const name of ["SecurityError", "NotAllowedError"] as const) {
+      mock.simulateGetUserMediaError(name);
+      await expect(
+        navigator.mediaDevices.getUserMedia(camera),
+      ).rejects.toMatchObject({ name });
+      expect(await stillPending(mock.waitForPermissionPrompt())).toBe(true);
+    }
+  });
+
+  it("a simulated NotFoundError fails at device selection, before any prompt", async () => {
+    mock.mock(devices["iPhone 12"], frameless);
+    mock.setPermissionState("camera", "prompt");
+    mock.simulateGetUserMediaError("NotFoundError");
+
+    await expect(
+      navigator.mediaDevices.getUserMedia(camera),
+    ).rejects.toMatchObject({ name: "NotFoundError" });
+    expect(await stillPending(mock.waitForPermissionPrompt())).toBe(true);
+  });
+
+  it("a simulated NotFoundError is reported as NotAllowedError while the camera is denied", async () => {
+    mock.mock(devices["iPhone 12"], frameless);
+    mock.setPermissionState("camera", "denied");
+    mock.simulateGetUserMediaError("NotFoundError");
+
+    await expect(
+      navigator.mediaDevices.getUserMedia(camera),
+    ).rejects.toMatchObject({ name: "NotAllowedError" });
+  });
+
+  it("a simulated OverconstrainedError hides its constraint until a permission is granted", async () => {
+    mock.mock(devices["iPhone 12"], frameless);
+    mock.simulateGetUserMediaError("OverconstrainedError", {
+      constraint: "width",
+    });
+
+    await expect(
+      navigator.mediaDevices.getUserMedia(camera),
+    ).rejects.toMatchObject({
+      name: "OverconstrainedError",
+      constraint: "width",
+    });
+
+    mock.setPermissionState("camera", "prompt");
+    mock.setPermissionState("microphone", "prompt");
+    await expect(
+      navigator.mediaDevices.getUserMedia(camera),
+    ).rejects.toMatchObject({ name: "OverconstrainedError", constraint: "" });
+  });
+
+  for (const name of ["NotReadableError", "AbortError"] as const) {
+    it(`a simulated ${name} fails only after the prompt is allowed, leaving the permission granted`, async () => {
+      mock.mock(devices["iPhone 12"], frameless);
+      mock.setPermissionState("camera", "prompt");
+      mock.simulateGetUserMediaError(name);
+      const pending = navigator.mediaDevices.getUserMedia(camera);
+
+      expect(await mock.waitForPermissionPrompt()).toEqual({
+        camera: true,
+        microphone: false,
+      });
+      expect(await stillPending(pending)).toBe(true);
+
+      mock.answerPermissionPrompt("allow");
+
+      await expect(pending).rejects.toMatchObject({ name });
+      expect((await query("camera")).state).toBe("granted");
+    });
+  }
+
+  it("a denied or dismissed prompt fails with NotAllowedError before a simulated NotReadableError", async () => {
     mock.mock(devices["iPhone 12"], frameless);
     mock.setPermissionState("camera", "prompt");
     mock.simulateGetUserMediaError("NotReadableError");
 
+    const dismissed = navigator.mediaDevices.getUserMedia(camera);
+    await mock.waitForPermissionPrompt();
+    mock.answerPermissionPrompt("dismiss");
+    await expect(dismissed).rejects.toMatchObject({
+      name: "NotAllowedError",
+      message: "Permission dismissed",
+    });
+
+    const denied = navigator.mediaDevices.getUserMedia(camera);
+    await mock.waitForPermissionPrompt();
+    mock.answerPermissionPrompt("deny");
+    await expect(denied).rejects.toMatchObject({ name: "NotAllowedError" });
+
+    // Denied now: no prompt, and the hardware is never reached.
     await expect(
       navigator.mediaDevices.getUserMedia(camera),
-    ).rejects.toMatchObject({ name: "NotReadableError" });
-    expect(await stillPending(mock.waitForPermissionPrompt())).toBe(true);
+    ).rejects.toMatchObject({ name: "NotAllowedError" });
   });
 });
 

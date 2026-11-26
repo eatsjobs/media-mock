@@ -416,14 +416,18 @@ The error stays in effect for every `getUserMedia` call until you clear it (`unm
 
 Supported names, with the message each one defaults to:
 
-| Name | Default message | Typical cause |
-| --- | --- | --- |
-| `NotAllowedError` | `Permission denied` | User denied camera permission |
-| `NotFoundError` | `Requested device not found` | No device matches the constraints |
-| `NotReadableError` | `Could not start video source` | Camera busy or hardware/OS error |
-| `OverconstrainedError` | *(empty)* | Constraints cannot be satisfied |
-| `AbortError` | `Starting videoinput failed` | Device failed to start |
-| `SecurityError` | `MediaDevices access is not allowed in this context` | Blocked (e.g. insecure context) |
+| Name | Default message | Typical cause | Fires |
+| --- | --- | --- | --- |
+| `NotAllowedError` | `Permission denied` | Access blocked (site, OS or policy) | up front |
+| `SecurityError` | `MediaDevices access is not allowed in this context` | Blocked (e.g. insecure context) | up front |
+| `NotFoundError` | `Requested device not found` | No device matches the constraints | at device selection |
+| `OverconstrainedError` | *(empty)* | Constraints cannot be satisfied | at device selection |
+| `NotReadableError` | `Could not start video source` | Camera busy or hardware/OS error | after permission is granted |
+| `AbortError` | `Starting videoinput failed` | Device failed to start | after permission is granted |
+
+The last column is the step of the browser's `getUserMedia` algorithm where each one happens, and it matters once the [permission prompt](#simulating-the-permission-prompt) is involved. "Up front" and "at device selection" fail without a prompt. "After permission is granted" opens the prompt first: only once it is answered `"allow"` does the call fail — and the permission stays granted, as when a user allows the camera but another app is holding it. A denied or dismissed prompt fails with `NotAllowedError` instead. While a requested permission is `"denied"`, a device-selection error is reported as `NotAllowedError`, and until a permission is granted `OverconstrainedError.constraint` is `""` — a page without access learns nothing about the hardware.
+
+To model a user denying permission, prefer [`setPermissionState`](#simulating-the-permission-prompt): it is per camera/microphone, and revoking ends live tracks. A simulated `"NotAllowedError"` is the blunt version, for blocks the permission state does not explain.
 
 Override the message, or name the offending constraint for `OverconstrainedError`:
 
@@ -504,7 +508,7 @@ await expect(page.getByText("Camera blocked")).toBeVisible();
 - **Device problems come first.** A request no device can serve is refused (`NotFoundError`, `OverconstrainedError`) before any prompt opens. Until a permission is granted, `OverconstrainedError.constraint` is `""`.
 - **Revoking ends tracks.** Moving a permission away from `"granted"` ends the live tracks that needed it, each firing one `ended` event — what browsers do when a site's camera access is withdrawn.
 - **`unmock()` settles everything.** A `getUserMedia` still waiting on a prompt rejects with `AbortError`, so nothing hangs into the next test.
-- **The simulated error stays first.** While [`simulateGetUserMediaError`](#simulating-errors) is set, `getUserMedia` rejects with it and no prompt opens; with `"NotAllowedError"`, `query` reports `"denied"` for both permissions until it is cleared.
+- **Simulated errors fire where the browser raises them.** A [`simulateGetUserMediaError`](#simulating-errors) of `NotReadableError` or `AbortError` fails only after the prompt is allowed; the others fail without one (see the table there). With `"NotAllowedError"`, `query` reports `"denied"` for both permissions until it is cleared.
 
 > **Changed in 2.6:** while mocked, `navigator.permissions.query` reports the mock's state for `camera` and `microphone` — `"granted"` by default — instead of the browser's. Pass `{ permissions: false }` to `mock()` to keep the native behaviour.
 

@@ -173,9 +173,10 @@ selection happens **before** the permission request; the existing refusal
 code in `getMockStream` already runs in that order, so the permission step
 slots in after it:
 
-1. Simulated error (`simulateGetUserMediaError`) — unchanged, still first.
+1. Simulated `SecurityError` / `NotAllowedError` — blocked outright, no prompt.
 2. Empty request → `TypeError` — unchanged.
-3. Device selection and constraint refusal — unchanged, **except** the spec's
+3. Device selection and constraint refusal, including a simulated
+   `NotFoundError` / `OverconstrainedError` — unchanged, **except** the spec's
    "getUserMedia specific failure is allowed" rule: if any requested kind's
    permission is `"denied"`, a `NotFoundError` or `OverconstrainedError` is
    replaced by `NotAllowedError` (so a denied page can't probe hardware).
@@ -192,13 +193,20 @@ slots in after it:
      requests for different kinds of media into a single user-facing
      permission prompt"), and wait. Spec: "If the user never responds, this
      algorithm stalls on this step."
-5. Stream creation — unchanged.
+5. Simulated `NotReadableError` / `AbortError` — the device fails to start,
+   only after permission is granted; the permission stays granted.
+6. Stream creation — unchanged.
+
+> **Revised after review (2026-11-26):** the first version threw every
+> simulated error at step 1, before any prompt. That made "the user allowed
+> the camera, but another app holds it" untestable, so each simulated error
+> now fires at the step where a real browser raises it.
 
 Answering the open prompt:
 
 | Answer | Prompted states become | The waiting `getUserMedia` |
 |---|---|---|
-| `allow` | `"granted"` | continues at step 5 and resolves as today |
+| `allow` | `"granted"` | continues at step 5 |
 | `deny` | `"denied"` | rejects `NotAllowedError`, message "Permission denied" |
 | `dismiss` | unchanged (`"prompt"`) | rejects `NotAllowedError`, message "Permission dismissed" (Chromium) |
 
@@ -253,7 +261,9 @@ the mock.
 
 ### Interaction with `simulateGetUserMediaError("NotAllowedError")`
 
-The simulated error stays a blunt override (step 1). For consistency, while
+A simulated `NotAllowedError` stays a blunt override (step 1), for blocks
+the permission state does not explain (OS- or policy-level); a user's
+denial is modelled with `setPermissionState`. For consistency, while
 `NotAllowedError` is simulated `navigator.permissions.query` reports
 `"denied"` for both names, just as `enumerateDevices` already redacts as if
 denied. Setting or clearing that error notifies live `PermissionStatus`

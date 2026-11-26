@@ -1089,7 +1089,7 @@ export class MediaMockClass {
   private selectionFailure(
     name: "NotFoundError" | "OverconstrainedError",
     kinds: PermissionPrompt,
-    constraint = "",
+    options: SimulatedErrorOptions = {},
   ): Error {
     const deniedKind = MEDIA_PERMISSION_NAMES.some(
       (permission) =>
@@ -1103,20 +1103,24 @@ export class MediaMockClass {
       (permission) => this.permissions.state(permission) === "granted",
     );
     return createGetUserMediaError(name, {
-      constraint: canExposeDeviceInfo ? constraint : "",
+      ...options,
+      constraint: canExposeDeviceInfo ? (options.constraint ?? "") : "",
     });
   }
 
   private async getMockStream(
     constraints: MediaStreamConstraints,
   ): Promise<MediaStream> {
-    // Reject before touching the canvas or loading any media, like a real
-    // browser that fails permission or device selection up front.
-    if (this.simulatedGetUserMediaError !== null) {
-      throw createGetUserMediaError(
-        this.simulatedGetUserMediaError.name,
-        this.simulatedGetUserMediaError.options,
-      );
+    // A simulated error fires at the step of the spec's algorithm where a
+    // real browser raises it, so it composes with the permission prompt:
+    // blocked outright up front, a missing or unsuitable device at selection,
+    // and a device that fails to start only once permission is granted.
+    const simulated = this.simulatedGetUserMediaError;
+    if (
+      simulated?.name === "SecurityError" ||
+      simulated?.name === "NotAllowedError"
+    ) {
+      throw createGetUserMediaError(simulated.name, simulated.options);
     }
 
     const wantsVideo = isVideoRequested(constraints);
@@ -1148,6 +1152,12 @@ export class MediaMockClass {
       microphone: wantsAudio,
     };
     if (
+      simulated?.name === "NotFoundError" ||
+      simulated?.name === "OverconstrainedError"
+    ) {
+      throw this.selectionFailure(simulated.name, kinds, simulated.options);
+    }
+    if (
       wantsAudio &&
       (!audioDevice || !this.produceAudio || !Microphone.isSupported())
     ) {
@@ -1166,7 +1176,9 @@ export class MediaMockClass {
       supportedConstraints: this.state.constraints,
     });
     if (unsatisfiable) {
-      throw this.selectionFailure("OverconstrainedError", kinds, unsatisfiable);
+      throw this.selectionFailure("OverconstrainedError", kinds, {
+        constraint: unsatisfiable,
+      });
     }
 
     // Before any media is loaded, so an environment that can never paint fails
@@ -1185,6 +1197,17 @@ export class MediaMockClass {
     // Granted, but the mock may have gone between the answer and now.
     if (this.generation !== generation) {
       throw permissionFailure("aborted");
+    }
+
+    // Starting the device: a hardware failure surfaces only after the user
+    // allowed access, and the permission stays granted. Read afresh, since
+    // the test may have changed the simulated error while the prompt was open.
+    const startFailure = this.simulatedGetUserMediaError;
+    if (
+      startFailure?.name === "NotReadableError" ||
+      startFailure?.name === "AbortError"
+    ) {
+      throw createGetUserMediaError(startFailure.name, startFailure.options);
     }
 
     const tracks: MediaStreamTrack[] = [];
