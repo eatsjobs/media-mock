@@ -481,10 +481,10 @@ const stream = await pending;
 
 ### With Playwright
 
-The test talks to the page through `page.evaluate`, which can only carry plain data — so waiting and answering are separate calls, and the app can be checked in between. Reach the mock the same way as for anything else, for example the [UMD global](#cdn) installed with `page.addInitScript`:
+The test talks to the page through `page.evaluate`, which can only carry plain data — so waiting and answering are separate calls, and the app can be checked in between. The chainable methods return the mock itself, so give those callbacks a block body (`() => { ...; }`) rather than sending the whole instance back to the test. Reach the mock the same way as for anything else, for example the [UMD global](#cdn) installed with `page.addInitScript`:
 
 ```typescript
-await page.evaluate(() => window.MediaMock.MediaMock.setPermissionState("camera", "prompt"));
+await page.evaluate(() => { window.MediaMock.MediaMock.setPermissionState("camera", "prompt"); });
 await page.getByRole("button", { name: "Scan" }).click();
 
 await page.evaluate(() => window.MediaMock.MediaMock.waitForPermissionPrompt());

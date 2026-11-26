@@ -49,6 +49,18 @@
         background: #273357;
       }
 
+      #prompt-answers[hidden] {
+        display: none;
+      }
+
+      #prompt-answers {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        padding-left: 8px;
+        border-left: 1px solid #33406b;
+      }
+
       #status {
         margin-left: auto;
         opacity: 0.8;
@@ -65,6 +77,15 @@
       <button id="source-video" type="button">Video file</button>
       <button id="source-three" type="button">Three.js scene</button>
       <button id="simulate-denied" type="button">Simulate denied</button>
+      <button id="simulate-prompt" type="button">Simulate prompt</button>
+      <!-- What a test does through answerPermissionPrompt(); not a fake
+           browser dialog. -->
+      <span id="prompt-answers" hidden>
+        Answer as the user:
+        <button id="answer-allow" type="button">Allow</button>
+        <button id="answer-deny" type="button">Deny</button>
+        <button id="answer-dismiss" type="button">Dismiss</button>
+      </span>
       <span id="status">starting…</span>
     </div>
 

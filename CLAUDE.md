@@ -71,6 +71,7 @@ pnpm check-types
 - **Video file** — a video drawn onto a canvas MediaMock owns
 - **Three.js scene** — a rotating cube whose `WebGLRenderer` canvas is captured directly, demonstrating `setSource(canvas)`
 - **Simulate denied** — `simulateGetUserMediaError("NotAllowedError")`, showing the rejection and redacted `enumerateDevices`
+- **Simulate prompt** — `setPermissionState("camera", "prompt")`; `getUserMedia` waits until the Allow / Deny / Dismiss buttons call `answerPermissionPrompt()`, and the status line shows the outcome and the `navigator.permissions.query` state
 
 `three` is a devDependency used only here; it never reaches the published bundle.
 
