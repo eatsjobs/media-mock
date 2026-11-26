@@ -2,6 +2,21 @@
 
 Upgrading from 1.x reaches the current release through every section below, so read them all — the change most likely to surface in an existing test suite is [`getCapabilities()`](#getcapabilities-now-describes-the-emulated-camera), in 2.0 → 2.1.
 
+## 2.5 → 2.6
+
+No API changed shape. One behaviour a test can notice: while mocked, `navigator.permissions.query({ name: "camera" })` and `{ name: "microphone" }` report the mock's permission state — `"granted"` unless [`setPermissionState`](./README.md#simulating-the-permission-prompt) says otherwise — instead of whatever the browser would have answered. That matches what the mocked `getUserMedia` already did: it never prompted.
+
+If a test relied on the browser's own answer, opt out:
+
+```diff
+-MediaMock.mock(devices["iPhone 12"]);
++MediaMock.mock(devices["iPhone 12"], { permissions: false });
+```
+
+`enumerateDevices()` redaction now follows each permission separately: cameras are redacted while `camera` is not granted, microphones and speakers while `microphone` is not. With the default `"granted"` nothing changes; `simulateGetUserMediaError("NotAllowedError")` still redacts every entry.
+
+---
+
 ## 2.3 → 2.4
 
 No API changed shape, but `applyConstraints()` now follows the specification in two ways that a test can notice. Each call is the whole constraint set rather than an addition to the previous ones, and basic constraints follow the same rules as `getUserMedia`: `exact`, `min` and `max` are mandatory, while `ideal` and bare values are preferences. On a camera whose zoom goes from 1 to 4:

@@ -1,4 +1,9 @@
-import { devices, MediaMock, TimerMode } from "../lib/main.ts";
+import {
+  devices,
+  MediaMock,
+  type PermissionPromptAnswer,
+  TimerMode,
+} from "../lib/main.ts";
 
 /**
  * Demo page for @eatsjobs/media-mock.
@@ -20,6 +25,9 @@ const videoElement = document.querySelector<HTMLVideoElement>(
 ) as HTMLVideoElement;
 const statusElement = document.querySelector<HTMLElement>(
   "#status",
+) as HTMLElement;
+const promptAnswers = document.querySelector<HTMLElement>(
+  "#prompt-answers",
 ) as HTMLElement;
 
 /**
@@ -141,6 +149,51 @@ async function simulateDenied() {
   }
 }
 
+/**
+ * Shows the permission prompt API: getUserMedia waits while the camera
+ * permission is "prompt", and the buttons answer it the way a test would with
+ * answerPermissionPrompt(). navigator.permissions.query follows along.
+ */
+async function simulatePrompt() {
+  MediaMock.unmock();
+  promptAnswers.hidden = true;
+  MediaMock.mock(devices["iPhone 12"]).setPermissionState("camera", "prompt");
+  await MediaMock.setSource(VIDEO_ASSET_URL);
+
+  const queryCamera = () =>
+    navigator.permissions.query({ name: "camera" as PermissionName });
+
+  // A status held across the prompt hears the answer as a `change` event,
+  // which arrives in a later task than the getUserMedia outcome.
+  const permission = await queryCamera();
+  permission.onchange = () => {
+    console.log("camera permission changed to", permission.state);
+  };
+
+  const pending = navigator.mediaDevices.getUserMedia({ video: true });
+
+  const prompt = await MediaMock.waitForPermissionPrompt();
+  statusElement.textContent = `prompt open — asking for ${prompt.camera ? "camera" : ""}${prompt.camera && prompt.microphone ? " + " : ""}${prompt.microphone ? "microphone" : ""}`;
+  promptAnswers.hidden = false;
+
+  try {
+    const stream = await pending;
+    videoElement.srcObject = stream;
+    await videoElement.play();
+    statusElement.textContent = `streaming — camera permission: ${(await queryCamera()).state}`;
+  } catch (error) {
+    const refused = error as DOMException;
+    videoElement.srcObject = null;
+    statusElement.textContent = `${refused.name}: ${refused.message} — camera permission: ${(await queryCamera()).state}`;
+  } finally {
+    promptAnswers.hidden = true;
+  }
+}
+
+function answerPrompt(answer: PermissionPromptAnswer) {
+  MediaMock.answerPermissionPrompt(answer);
+}
+
 document
   .querySelector("#source-video")
   ?.addEventListener("click", () => start("video"));
@@ -150,5 +203,13 @@ document
 document
   .querySelector("#simulate-denied")
   ?.addEventListener("click", () => simulateDenied());
+document
+  .querySelector("#simulate-prompt")
+  ?.addEventListener("click", () => simulatePrompt());
+for (const answer of ["allow", "deny", "dismiss"] as const) {
+  document
+    .querySelector(`#answer-${answer}`)
+    ?.addEventListener("click", () => answerPrompt(answer));
+}
 
 window.addEventListener("load", () => start("video"));
