@@ -66,6 +66,7 @@ import {
   decorateVideoTrack,
   endTrack,
   trackEndedListeners,
+  whenStopped,
 } from "./track";
 import { VideoFrameCallbackDriver } from "./videoFrameCallback";
 
@@ -995,6 +996,18 @@ export class MediaMockClass {
     return this;
   }
 
+  /**
+   * Catches tracks that ended without passing through their own `stop()` or
+   * an `ended` event, such as `MediaStreamTrack.prototype.stop.call(track)`.
+   */
+  private forgetEndedTracks(): void {
+    for (const track of this.liveTracks) {
+      if (track.readyState === "ended") {
+        this.liveTracks.delete(track);
+      }
+    }
+  }
+
   private endLiveTracks(kind: "video" | "audio"): void {
     for (const track of this.liveTracks) {
       if (track.kind === kind) {
@@ -1242,18 +1255,17 @@ export class MediaMockClass {
       ? new MediaStream(tracks)
       : createSyntheticStream(tracks);
     this.ownStreams.add(this.currentStream);
+    this.forgetEndedTracks();
     for (const track of tracks) {
       // Before the app gets the track, so revocation can reach its listeners
       // even in Firefox.
       trackEndedListeners(track);
       this.liveTracks.add(track);
-      track.addEventListener(
-        "ended",
-        () => {
-          this.liveTracks.delete(track);
-        },
-        { once: true },
-      );
+      const forgetTrack = () => {
+        this.liveTracks.delete(track);
+      };
+      track.addEventListener("ended", forgetTrack, { once: true });
+      whenStopped(track, forgetTrack);
     }
 
     if (this.debug) {

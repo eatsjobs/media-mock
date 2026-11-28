@@ -315,6 +315,25 @@ export function trackEndedListeners(track: MediaStreamTrack): void {
   });
 }
 
+/**
+ * Calls `onStopped` whenever `track.stop()` is called. `stop()` fires no
+ * `ended` event, so without this a track the app stopped looks live forever.
+ */
+export function whenStopped(
+  track: MediaStreamTrack,
+  onStopped: () => void,
+): void {
+  const stop = track.stop;
+  Object.defineProperty(track, "stop", {
+    value: function stopAndNotify(this: MediaStreamTrack): void {
+      onStopped();
+      stop.call(this);
+    },
+    configurable: true,
+    writable: true,
+  });
+}
+
 /** Calls a recorded listener the way dispatch would: `this` is the track. */
 function invoke(
   track: MediaStreamTrack,

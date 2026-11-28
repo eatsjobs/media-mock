@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { server } from "vitest/browser";
 import {
   createMediaDeviceInfo,
   devices,
@@ -212,5 +213,70 @@ describe("MediaMock regressions", () => {
     await navigator.mediaDevices.getUserMedia({ video: true });
 
     expect(handlerCalls).toBe(0);
+  });
+
+  describe("releasing stopped tracks", () => {
+    // Typed here because the library targets ES2020, which has no WeakRef.
+    const { gc, WeakRef: WeakReference } = globalThis as unknown as {
+      gc?: () => void;
+      WeakRef: new <T extends object>(target: T) => { deref(): T | undefined };
+    };
+
+    // Only Chromium is launched with --expose-gc. There, a missing gc() is a broken config, not a skip.
+    const collectGarbage = (context: { skip: (note: string) => void }) => {
+      if (server.browser !== "chromium") {
+        context.skip("only Chromium exposes gc()");
+      }
+      expect(gc, "Chromium must be launched with --expose-gc").toBeTypeOf(
+        "function",
+      );
+      return gc as () => void;
+    };
+
+    const getTrackAndStop = async (stop: (track: MediaStreamTrack) => void) => {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      const [track] = stream.getVideoTracks();
+      stop(track);
+      return new WeakReference(track);
+    };
+
+    const expectCollected = async (
+      collect: () => void,
+      trackReference: { deref(): MediaStreamTrack | undefined },
+    ) => {
+      // A boolean, because poll keeps the last value it got, which would keep the track alive.
+      await expect
+        .poll(() => {
+          collect();
+          return trackReference.deref() === undefined;
+        })
+        .toBe(true);
+    };
+
+    beforeEach(async () => {
+      MediaMock.mock(devices["Samsung Galaxy M53"]);
+      await MediaMock.setSource(imageUrl);
+    });
+
+    it("should let a track stopped by the app be garbage-collected", async (context) => {
+      const collect = collectGarbage(context);
+
+      const stoppedTrack = await getTrackAndStop((track) => track.stop());
+      // The mock keeps its latest stream, so a second one releases the first.
+      await getTrackAndStop((track) => track.stop());
+
+      await expectCollected(collect, stoppedTrack);
+    });
+
+    it("should let a track stopped through the prototype be garbage-collected", async (context) => {
+      const collect = collectGarbage(context);
+
+      const stoppedTrack = await getTrackAndStop((track) =>
+        MediaStreamTrack.prototype.stop.call(track),
+      );
+      await getTrackAndStop((track) => track.stop());
+
+      await expectCollected(collect, stoppedTrack);
+    });
   });
 });
