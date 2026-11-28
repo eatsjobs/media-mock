@@ -66,6 +66,7 @@ import {
   decorateVideoTrack,
   endTrack,
   trackEndedListeners,
+  whenStopped,
 } from "./track";
 import { VideoFrameCallbackDriver } from "./videoFrameCallback";
 
@@ -1247,13 +1248,11 @@ export class MediaMockClass {
       // even in Firefox.
       trackEndedListeners(track);
       this.liveTracks.add(track);
-      track.addEventListener(
-        "ended",
-        () => {
-          this.liveTracks.delete(track);
-        },
-        { once: true },
-      );
+      const forgetTrack = () => {
+        this.liveTracks.delete(track);
+      };
+      track.addEventListener("ended", forgetTrack, { once: true });
+      whenStopped(track, forgetTrack);
     }
 
     if (this.debug) {

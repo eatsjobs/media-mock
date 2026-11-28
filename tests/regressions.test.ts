@@ -213,4 +213,36 @@ describe("MediaMock regressions", () => {
 
     expect(handlerCalls).toBe(0);
   });
+
+  it("should let a track stopped by the app be garbage-collected", async (context) => {
+    // Typed here because the library targets ES2020, which has no WeakRef.
+    const { gc, WeakRef: WeakReference } = globalThis as unknown as {
+      gc?: () => void;
+      WeakRef: new <T extends object>(target: T) => { deref(): T | undefined };
+    };
+    if (!gc) {
+      context.skip("needs a browser launched with --expose-gc");
+      return;
+    }
+    MediaMock.mock(devices["Samsung Galaxy M53"]);
+    await MediaMock.setSource(imageUrl);
+
+    const getAndStopTrack = async () => {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      const [track] = stream.getVideoTracks();
+      track.stop();
+      return new WeakReference(track);
+    };
+    const stoppedTrack = await getAndStopTrack();
+    // The mock keeps its latest stream, so a second one releases the first.
+    await getAndStopTrack();
+
+    // A boolean, because poll keeps the last value it got, which would keep the track alive.
+    await expect
+      .poll(() => {
+        gc();
+        return stoppedTrack.deref() === undefined;
+      })
+      .toBe(true);
+  });
 });

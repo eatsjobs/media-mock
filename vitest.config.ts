@@ -1,12 +1,18 @@
 import { playwright } from "@vitest/browser-playwright";
 import { defineConfig } from "vitest/config";
 
+// Exposes gc() so a test can prove the mock lets go of what it hands out.
+const chromiumWithGc = playwright({
+  launchOptions: { args: ["--js-flags=--expose-gc"] },
+});
+
 const browserInstances = process.env.CI
   ? [
       // In CI, only run Chromium for speed and reliability
       {
         browser: "chromium",
         headless: true,
+        provider: chromiumWithGc,
         launch: {
           timeout: 15000,
           args: [
@@ -26,6 +32,7 @@ const browserInstances = process.env.CI
       {
         browser: "chromium",
         headless: true,
+        provider: chromiumWithGc,
         launch: {
           timeout: 10000,
           args: [
